@@ -8,11 +8,19 @@
 
 TITLE       := Ultimate PS4 Media Player
 VERSION     := 1.00
-# The PS4 enforces the Content ID length: 6 + 1 + 12 + 1 + 16 = 36 characters,
-# where the middle 12 are the 9-character TITLE_ID plus "_00". PkgTool aborts
-# with "Content ID must be 36 characters long" otherwise.
-TITLE_ID    := BREWMEDI1
-CONTENT_ID  := IV0000-BREWMEDI1_00-ULTIMATEMEDIA000
+# The PS4 enforces both the Content ID length and the shape of the title ID
+# inside it: 6 + 1 + 12 + 1 + 16 = 36 characters, where the middle 12 are the
+# 9-character TITLE_ID plus "_00".
+#
+# A TITLE_ID is four letters followed by five decimal digits (BREW00084,
+# AZIF00001). Putting letters after the fourth character - BREWMEDI1, say -
+# still gives a 36-character Content ID, so PkgTool builds the package happily,
+# and then the console refuses to install it with
+#   CE-32957-6  SCE_BGFT_ERROR_INVALID_CONTENTID
+# which is what the first v1.00 build did. PkgTool only checks the length; the
+# title ID format is checked by the console at install time.
+TITLE_ID    := BREM00001
+CONTENT_ID  := IV0000-BREM00001_00-ULTIMATEMEDIA000
 
 # -lSceAudioOut for playback, -lSceUserService for the initial user,
 # -lSDL2 for window/renderer/controller. -lm only if your toolchain ships
