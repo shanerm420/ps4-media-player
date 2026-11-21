@@ -11,6 +11,15 @@ build that installs as **Ultimate PS4 Media Player**.
 > so playback timing, colour and USB numbering still need a hardware pass.
 > Built against OpenOrbis toolchain v0.5.4 on Ubuntu 24.04.
 
+## Download
+
+The latest build is attached to
+**[Releases](https://github.com/shanerm420/ps4-media-player/releases/latest)**:
+`IV0000-BREWMEDI1_00-ULTIMATEMEDIA000.pkg` (6.6 MB). It is fake-signed, so the
+console must be jailbroken with HEN/GoldHEN running. Install steps are under
+[Install on the console](#install-on-the-console); to build it yourself, see
+[Quick start](#quick-start).
+
 ## What it does
 
 * **Plays MP3** with a 10-band equalizer, preamp, volume in dB and a soft
@@ -69,7 +78,7 @@ bundled 8x8 pixel font instead of Inter and no MP3 decoder, so run it first.
 ### Install on the console
 
 The package is fake-signed, so the console must be jailbroken with HEN/GoldHEN
-running.
+running. This is the same step the [download](#download) skips past.
 
 1. Copy the `.pkg` to the root of a USB stick (FAT32 or exFAT) or FTP it to
    `/data/pkg/`.
