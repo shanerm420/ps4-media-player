@@ -1353,3 +1353,169 @@ MD5, same bytes), 6,619,136 B, MD5
   the console card reads §2's own next action, and the predictions are parsed out
   of `APPENDIX-LOGS.md`. A board that names a finished run as the thing being
   waited for is worse than no board — it is the first thing anyone reads.
+
+
+## Build log - moved from `MANIFEST.md` §4 (2026-11-24)
+
+Kept verbatim. The spine now carries only the present (§2) and the decisions
+(§5); this is the dated record, oldest first, as it was written.
+
+## 4. Build log
+
+Moved to `files/HISTORY.md` on 2026-11-24: the log had grown to 827 lines and was
+crowding out the rules and the current state. The full entries — quoted log lines,
+MD5s, source hashes, decisions and corrections — live there, verbatim and in date
+order. This section is only the ledger, so a reader sees what happened without
+loading the history.
+
+| Date | Entry |
+|---|---|
+| 2026-11-23 | v113 (Liquid: water body, depth, framing) |
+| 2026-11-23 | v114 (Liquid: glass, floor, spray, glint) |
+| 2026-11-23 | v115 (the 467 ms freeze on Square) |
+| 2026-11-23 | manifest: environment closed, GoldHEN and FTP researched |
+| 2026-11-23 | v116 (glint, spray, floor — the three look tweaks) |
+| 2026-11-23 | on hardware: the freeze, and Liquid's step |
+| 2026-11-23 | manifest merge: the graphics standard becomes part of the goal |
+| 2026-11-23 | manifest: GPU paths, console facts, techniques, and other players |
+| 2026-11-23 | GPU path test: the piglet sample, built and packaged |
+| 2026-11-23 | v117 (header overlap) and the video/audit analysis |
+| 2026-11-23 | GPU test v2: a log written with kernel calls |
+| 2026-11-23 | GPU test v3: the stage log (the one to run) |
+| 2026-11-23 | the Piglet v3 log read: the GPU path is confirmed |
+| 2026-11-23 | the v117 log read: nothing regressed, the header needs the screen |
+| 2026-11-23 | manifest sync: graphics principles and the three rounds |
+| 2026-11-23 | v118 (logging only) built |
+| 2026-11-23 | Round 2 started, and stopped at the shader gate |
+| 2026-11-23 | the shader catalogue package (BREW00094) built |
+| 2026-11-23 | GNM checked, and the 60 fps skeleton written |
+| 2026-11-23 | manifest: owner statements are folded in automatically |
+| 2026-11-24 | the catalogue log read: a bloom chain CAN be assembled |
+| 2026-11-24 | GPU Bloom POC built (BREW00095, no player version) |
+| 2026-11-24 | the bloom log: the chain compiles, then dies at the first frame |
+| 2026-11-24 | BLOOM 2 built (BREW00096): per-call error tagging |
+| 2026-11-24 | the BLOOM 2 log: the chain runs, 85–100 fps, and the timings are not GPU timings |
+| 2026-11-24 | BLOOM 3 built (BREW00097): sample draw out, GPU timings, real workload |
+| 2026-11-24 | the BLOOM 3 log: my measurement is the bottleneck, and a uniform bug broke the blur |
+| 2026-11-24 | other Piglet projects consulted, then BLOOM 4 built (BREW00098) |
+| 2026-11-24 | R32 adopted: owner authorised scoped build rounds; dated backups under _scratch/backups/ are the revert path (hashes recorded in RELAY.md) |
+
+## Carried from other PS4 homebrew - evicted from `MANIFEST.md` §9 (20261124-1113)
+
+```
+### Carried from other PS4 homebrew (`researched only`; text in `PIGLET-NOTES.md`)
+
+Interval 0 is right for vsync; a `gde` app gets ~768 MiB direct and ~255 MiB
+flexible, not 4.6 GB; shader compiles 110-260 ms and uncacheable; no
+`glBlitFramebuffer`, 16-bit offscreen depth. Vsync was never the probe's problem
+- `eglSwapInterval(display, 0)` is already in the sample
+(`PigletApplication.cpp:182`) - so BREW00102's 16.66 ms with no present is still
+open and BREW00103 measures it with the GPU clock.
+```
+
+
+## Who has already solved what - evicted from `MANIFEST.md` §9 (20261124-1113)
+
+```
+### Who has already solved what (2026-11-24)
+
+Look for the existing answer first (R25, R26); findings, not code, in
+**`PIGLET-NOTES.md`**. `alechurri/shipofharkinian-ps4` `docs/TECHNICAL.md` is the
+best public Piglet write-up (`eglSwapInterval` trap, ~768/255 MiB memory,
+110-260 ms shader compiles, no `glBlitFramebuffer`, `struct stat` bug, `EINVAL`
+paths); `Navinas3460/Stremio-PS4` is a video app on this stack; `shadPS4` has the
+display contract; the ES2 spec has the uniform rule A5 cost two runs to learn.
+```
+
+## The conversation is part of the project - read-order addition (20261124-1301)
+
+```
+Owner, 2026-11-24: "just make sure that it's part of the project ... it's the
+soul of the project essentially." `CONVERSATIONS.md` at the kit root (5311
+bytes) holds the owner-and-agents record; this round puts it last in the read
+order, in `MANIFEST.md` and in `AGENTS.md` together, so a session meets it
+without being told: `HISTORY.md` (why it happened) -> `../CONVERSATIONS.md`
+(why we work this way; not a rule). MANIFEST.md 130916 -> 130977 bytes,
+AGENTS.md 40198 -> 40259. check-manifest 30 passed, 1 failed - the same stale
+`STATUS.html` as before the edit; check-links 7 pages, 0 problems, unchanged.
+The file is not in the public repo, so the published tree and CI never see it.
+```
+## The mutation harness is back, in test/ (20261124-1323)
+
+The owner asked for the fault harness to be rebuilt. It had been cited since early
+on and was simply gone: `ps4-media-player/_scratch/linttest/mutate.py` existed in no
+copy of the kit, while `status.py` ran it on every build. That is why the board read
+"a host check is failing" with nothing on the page to explain it.
+
+It now lives at `ps4-media-player/test/mutate.py`, beside the player tests, because
+`_scratch/` is exactly the directory a cleanup deletes. Twelve cases, matching the
+manifest's "12 of 12":
+
+   1 a section number has a gap        7 a rule bullet is duplicated
+   2 one R id appears twice            8 RULES.index is not valid JSON
+   3 a § reference points nowhere      9 the index drops a prose id (R33)
+   4 a TODO placeholder is left       10 an indexed rule has no falsifier (R34)
+   5 a superseded tag names no        11 a number is quoted with no status
+     amendment                           word (rule-index)
+   6 AGENTS grows past 40 KB          12 the build stamp reads the clock
+
+Each case copies the document tree to a temporary directory, injects one fault, and
+requires the real checker to exit non-zero *and* print the failure it is supposed to
+print. A crash for an unrelated reason is not a catch. The copy is removed in a
+finally block, so the working tree is never written, and a fault's timestamp is put
+back after the write so a case cannot pass merely because the edit made the status
+board look stale.
+
+Case 12 is a property rather than a corrupted document: two runs a second apart must
+agree, and SOURCE_DATE_EPOCH=0 must print 1970. To show the property has teeth, the
+same test runs against a copy of buildstamp.py whose DEFAULT reads the clock, and
+that copy must fail it.
+
+The first run caught 10 of 12 and said which two were wrong: a plain "97" where the
+fault needed a section reference, and a synthetic R row whose cell spacing did not
+match rule-index.py's parser. Both were harness bugs, not checker bugs; fixing them
+is what took the count to 12. This is the reason the harness matches the printed
+failure, not only the exit status.
+
+Wired in:
+  test/mutate.py          new, 12 cases
+  tools/status.py:79-80   the step path, and the count it advertises (8 -> 12)
+  Makefile:127            `make check` now runs the harness
+  MANIFEST.md:556         citation repointed to test/mutate.py; the
+                          declared-absent entry for the old path is gone
+
+Evidence, on the laptop, this round:
+  python3 test/mutate.py          12 of 12 caught, exit 0
+  make status                    wrote STATUS.html (4 steps, 4 passing, 48
+                                 rules), pill "all host checks passing" - the
+                                 first green board since the harness vanished
+  make check                     audio 30 PASS; manifest 31 passed, 0 failed;
+                                 rule index 48 rules, 0 problems
+  MANIFEST.md                    130,932 bytes, 140 under its 128 KB budget
+
+Backups, sha256:
+  _scratch/backups/MANIFEST.md.20261124T132110Z
+    b6ce01581b6d953711b2774d7f0a3ad6df6ec91b4857b5d0cda3c052831ec467
+  _scratch/backups/status.py.20261124T132110Z
+    eda0cc673d30831dffccb4812ee72481401057fda37ad48c2a6711389bcee40d
+  _scratch/backups/Makefile.20261124T132110Z
+    5ed0db336bf4be095fe913ac70d26b91c7fc543d0a515e5ae77c8fbf20f08e8b
+  _scratch/backups/HISTORY.md.20261124T132306Z
+    c7e9f1a704168e4b48ef3476c1124d14baa72feac61d649df0d582870dd03c80
+## Checkpoint: CI diagnosed, resume file written (20261124-1331)
+
+The CI red was checked rather than assumed. The audit branch carries the published
+layout - no MANIFEST.md, docs/ instead - and its workflow runs only check-links
+plus a docs/RULES.index status validation, never check-manifest. A shallow clone
+of audit/relay-2026-11-24 at 6017bf5 gives check-links 80 pages, 0 problems, and
+41 rules with valid statuses, so both CI steps pass at that commit. The recorded
+"85 pages, 69 problems" is therefore historical: commit 6017bf5, which redacted
+the relay for publication, is what changed the link set. gh is not authenticated
+here, so the live run list still needs the Actions page.
+
+The published tree is behind the working one: 41 rules there against 48 here, so
+publishing has not run since those seven rules were added.
+
+For a cold start, RESUME.md now sits in the kit root: state, open items in order,
+the commands, and the mistakes not to repeat. check-links roots at the repository,
+not the kit root, so that file is outside its scan either way.

@@ -54,6 +54,13 @@ Status vocabulary: **measured** (a console log proves it), **researched only**
 - [R29](R29.md) — **Do not reproduce a method that already exists - reuse it** — this project has rebuilt things that were already there: a bespoke logger and an on-screen text renderer for every probe while the player already had `applog` and its own text drawing, and a uniform-binding answer the ES2 spec states `procedural`
 - [R30](R30.md) — **Ask the owner only about how it should look; every technical question is answered here and work continues** — the owner's instruction, 2026-11-24: "the only thing that should be asked is aesthetic questions... if it has to do with programming or coding in any way... refer to the Manifest to find the solution instead of asking the user" `procedural`
 - [R31](R31.md) — **Two threads write the playback flags with no lock** - `s_playing`, `s_quit` and `s_track_finished` are declared `volatile int` in `src/main.c:157-159`; the SDL loop sets them, and `audio_thread` also writes them at the end of a track (`s_playing = 0; s_track_finished = 1;`, `src/main.c:1883-1885`), while `src/main.c` holds no `pthread_mutex` anywhere, so `volatile` is being asked to do a synchronization primitive's job `procedural`
+- [R32](R32.md) — **Owner-authorised rounds are the only way source is written** `procedural`
+- [R33](R33.md) — **One namespace: a rule is in the table and in the index, or it does not exist** `measured`
+- [R34](R34.md) — **A rule without a falsifier is a preference** `measured`
+- [R35](R35.md) — **Every pointer resolves, and a skipped check is never a pass** `measured`
+- [R36](R36.md) — **Every measured rule names the machine it was measured on** `assumed`
+- [R37](R37.md) — **Each agent verifies independently, and no agent's report is evidence for the other** `procedural`
+- [R38](R38.md) — **A pointer resolves in one of three declared namespaces** `measured`
 
 ## Amendments
 
