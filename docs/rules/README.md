@@ -53,6 +53,7 @@ Status vocabulary: **measured** (a console log proves it), **researched only**
 - [R28](R28.md) — **The target is the PS4 family, not this one console** — the work is PS4 software, and PS4 is the common denominator: same OS, same GLES2/Piglet, same audio, video, pad and package interfaces on every model, so working PS4 software runs on all PS4s `assumed`
 - [R29](R29.md) — **Do not reproduce a method that already exists - reuse it** — this project has rebuilt things that were already there: a bespoke logger and an on-screen text renderer for every probe while the player already had `applog` and its own text drawing, and a uniform-binding answer the ES2 spec states `procedural`
 - [R30](R30.md) — **Ask the owner only about how it should look; every technical question is answered here and work continues** — the owner's instruction, 2026-11-24: "the only thing that should be asked is aesthetic questions... if it has to do with programming or coding in any way... refer to the Manifest to find the solution instead of asking the user" `procedural`
+- [R31](R31.md) — **Two threads write the playback flags with no lock** - `s_playing`, `s_quit` and `s_track_finished` are declared `volatile int` in `src/main.c:157-159`; the SDL loop sets them, and `audio_thread` also writes them at the end of a track (`s_playing = 0; s_track_finished = 1;`, `src/main.c:1883-1885`), while `src/main.c` holds no `pthread_mutex` anywhere, so `volatile` is being asked to do a synchronization primitive's job `procedural`
 
 ## Amendments
 

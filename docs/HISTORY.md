@@ -1299,3 +1299,57 @@ MD5, same bytes), 6,619,136 B, MD5
   six times too pessimistic. Recorded as a miss on the cheap side, which is the
   useful kind: it says the cost model was over-cautious, not that the measurement
   is wrong. The register keeps the frame it was written in.
+
+### 2026-11-24 — The predictions register moves out, and the audio thread's unlocked flags become R31
+
+- **The predictions register left `MANIFEST.md` §11 for `APPENDIX-LOGS.md`.** It
+  is 2,359 bytes of evidence — six rows, P0 to P5, each with the number that would
+  falsify it — not a rule, and the manifest is against its ceiling. Every row moved
+  unchanged, the rule that governs the register moved with it ("no number from this
+  run enters §9 until its row is filled in"), and §11 keeps a pointer so nobody
+  looks for it where it used to be. The manifest went from 129,606 to 129,004
+  bytes with the new rule included.
+- **R31 records a defect that was in the source all along.** `s_playing`,
+  `s_quit` and `s_track_finished` are `volatile int` in `src/main.c:157-159`; the
+  SDL loop sets them and `audio_thread` sets them too when a track ends
+  (`src/main.c:1883-1885`), and `src/main.c` contains no `pthread_mutex` at all.
+  `volatile` does not make that atomic and does not order the flag against the
+  buffer it guards, so a stale or reordered read can start a track the loop has
+  stopped or leave the thread running one the loop thinks is over. The rule states
+  the fix — one owner per flag, a mutex or a generation handoff — and that the host
+  tests cannot see this race, so the proof has to be a console run that stalls and
+  repeats a track.
+- **`check-links.py` no longer judges `_scratch/`.** It was reporting two broken
+  links, both inside a throwaway copy of an older published tree where the target
+  files were never copied; those pages are not published and `rule-index.py`
+  already skips the same folder. With the folder excluded the check reads 7 pages,
+  0 problems. Nothing in the real documentation was broken before or after.
+- **Checks after the pass:** `check-manifest.py` 28 passed, 0 failed;
+  `rule-index.py` 41 rules, 0 problems; `check-links.py` 7 pages, 0 problems;
+  `status.py` 4 steps, 4 passing, 41 rules.
+
+### 2026-11-24 — Reading the manifest whole before an upload: a broken rules table and a board three rounds stale
+
+- **The graphics rules table was broken, and had been published that way.** Two
+  paragraphs — "Ruled out by the driver, not by preference…" and "One thing the
+  principles forbid saying…" — had been spliced *between* the R19-R29 rows, with
+  three blank lines splitting the table into four fragments. Markdown cannot
+  render that: the rules and the paragraphs both came out as rubble, in the
+  manifest and in the published `docs/manifest/09-…` page. The 14 rows R18-R31
+  are now contiguous, and the two paragraphs sit below the table where they
+  belong. Nothing was reworded; the text of both paragraphs is the same text,
+  only rejoined.
+- **§2 still said the source was not published.** It named tag
+  `docs-2026-11-24-0114` and "(source not yet published - see below)", which
+  stopped being true at `c55591b`. The row now states the real thing: source,
+  docs, tools and notes on `main`, tag `docs-2026-11-24-0209`, verified by
+  comparing 63 of 66 files against the master copy, with the three differences
+  named (the publisher's pointer block, the regenerated `AGENTS.md` header, the
+  generated `font_inter.h`), and that this tree is ahead of it by the R31 pass.
+- **The status board was advertising a run three rounds old.** "Waiting on the
+  console" was hardcoded to the BREW00098 bloom differential and
+  `/data/gpu-bloom98.log`, and "Predictions for that run" had gone empty the
+  moment the register moved to the appendix. Both now come from live sources:
+  the console card reads §2's own next action, and the predictions are parsed out
+  of `APPENDIX-LOGS.md`. A board that names a finished run as the thing being
+  waited for is worse than no board — it is the first thing anyone reads.
