@@ -124,6 +124,7 @@ check:
 	$(MAKE) -C test run
 	python3 tools/check-manifest.py
 	python3 tools/rule-index.py
+	python3 test/mutate.py
 
 # The status board: runs the checks again and rewrites files/STATUS.html.
 # Not part of `check`, because it calls `check` to fill its own rows.

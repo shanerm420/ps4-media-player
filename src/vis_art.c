@@ -847,147 +847,49 @@ static void star_shape(Cv *c, double cx, double cy, double rad, double rot,
 
 static SDL_Texture *s_tex;
 static int          s_tex_w, s_tex_h;
-static unsigned char *s_up;
-static size_t         s_up_cap;
 
-/* Bilinear expansion of the canvas to the frame.
- *
- * The reduced-quality path paints at half or a third of the frame, and a
- * nearest-neighbour expansion of that is exactly what "boxy" means: each
- * painted pixel becomes a hard square four or nine times its size, so every
- * curve turns into a staircase and every glow into a grid. This filter reads
- * four neighbours and blends, which is what the eye expects, and it is done
- * separably - one vertical blend of two source rows per output row, then a
- * horizontal pass - so the cost stays around the price of the copy it
- * replaces. */
-static int  *s_col0, *s_col1, *s_colf;
-static int   s_col_w, s_col_sw;
-static unsigned char *s_vrow;
-static size_t s_vrow_cap;
+static unsigned long long s_a3_rv_calls, s_a3_rv_bakes, s_a3_rv_alloc_fail;
+static unsigned long long s_a3_rv_bytes;
+static unsigned long long s_a3_pr_calls, s_a3_pr_upscales, s_a3_pr_uploads;
+static unsigned long long s_a3_pr_texcreates, s_a3_pr_copies;
+static unsigned long long s_a3_pr_upscale_bytes, s_a3_pr_upload_bytes;
+static unsigned long long s_a3_frames;
+static int s_a3_style = -1;
+static int s_a3_step = -1;
 
-static void col_table(int w, int sw)
-{
-    int x;
-
-    if (s_col_w == w && s_col_sw == sw && s_col0)
-        return;
-    free(s_col0);
-    free(s_col1);
-    free(s_colf);
-    s_col0 = (int *)malloc(sizeof(int) * (size_t)w);
-    s_col1 = (int *)malloc(sizeof(int) * (size_t)w);
-    s_colf = (int *)malloc(sizeof(int) * (size_t)w);
-    s_col_w = s_col0 && s_col1 && s_colf ? w : 0;
-    s_col_sw = sw;
-    if (!s_col_w)
-        return;
-    for (x = 0; x < w; x++) {
-        long num = (long)x * sw;
-
-        s_col0[x] = (int)(num / w);
-        s_col1[x] = s_col0[x] + 1 < sw ? s_col0[x] + 1 : sw - 1;
-        s_colf[x] = (int)(((num % w) * 256) / w);
-    }
-}
-
-static int upscale_bilinear(const Cv *src, unsigned char *dst, int w, int h)
-{
-    int x, y, c, sw = src->w, sh = src->h;
-    size_t need = (size_t)sw * 3;
-
-    if (!src->p || sw < 1 || sh < 1)
-        return 0;
-    col_table(w, sw);
-    if (!s_col_w)
-        return 0;
-    if (!s_vrow || s_vrow_cap < need) {
-        free(s_vrow);
-        s_vrow = (unsigned char *)malloc(need);
-        s_vrow_cap = s_vrow ? need : 0;
-    }
-    if (!s_vrow)
-        return 0;
-
-    for (y = 0; y < h; y++) {
-        long   num = (long)y * sh;
-        int    sy0 = (int)(num / h);
-        int    sy1 = sy0 + 1 < sh ? sy0 + 1 : sh - 1;
-        int    fy  = (int)(((num % h) * 256) / h);
-        const unsigned char *ra = src->p + (size_t)sy0 * (size_t)sw * 4;
-        const unsigned char *rb = src->p + (size_t)sy1 * (size_t)sw * 4;
-        unsigned char *drow = dst + (size_t)y * (size_t)w * 4;
-
-        for (x = 0; x < sw; x++) {
-            for (c = 0; c < 3; c++) {
-                int a = ra[x * 4 + c], b = rb[x * 4 + c];
-
-                s_vrow[x * 3 + c] = (unsigned char)(a + (((b - a) * fy) >> 8));
-            }
-        }
-        for (x = 0; x < w; x++) {
-            int    i0 = s_col0[x] * 3, i1 = s_col1[x] * 3;
-            int    f  = s_colf[x];
-
-            drow[x * 4 + 0] = (unsigned char)(s_vrow[i0] + (((s_vrow[i1] - s_vrow[i0]) * f) >> 8));
-            drow[x * 4 + 1] = (unsigned char)(s_vrow[i0 + 1] + (((s_vrow[i1 + 1] - s_vrow[i0 + 1]) * f) >> 8));
-            drow[x * 4 + 2] = (unsigned char)(s_vrow[i0 + 2] + (((s_vrow[i1 + 2] - s_vrow[i0 + 2]) * f) >> 8));
-            drow[x * 4 + 3] = 255;
-        }
-    }
-    return 1;
-}
-
-/* Puts the canvas on screen at the frame's own pixel size.
- *
- * When the canvas is smaller than the frame - which is what happens when the
- * quality step below has reduced it - the expansion is done here, in software,
- * because the blit must be 1:1: a scaled blit is the renderer's slow path, the
- * same one that was costing the background 45 ms a frame. */
 static int art_present(SDL_Renderer *r, Cv *c, int x, int y, int w, int h)
 {
     SDL_Rect dst;
-    Cv       out;
+
+    s_a3_pr_calls++;
 
     if (!c->p || w < 1 || h < 1)
         return 0;
 
-    out = *c;
-    if (c->w != w || c->h != h) {
-        size_t need = (size_t)w * (size_t)h * 4;
-
-        if (!s_up || s_up_cap < need) {
-            free(s_up);
-            s_up = cv_alloc(w, h);
-            s_up_cap = s_up ? need : 0;
-        }
-        if (!s_up || !upscale_bilinear(c, s_up, w, h))
-            return 0;
-        out.p = s_up;
-        out.w = w;
-        out.h = h;
-    }
-
-    if (!s_tex || s_tex_w != out.w || s_tex_h != out.h) {
+    if (!s_tex || s_tex_w != c->w || s_tex_h != c->h) {
         if (s_tex) {
             SDL_DestroyTexture(s_tex);
             s_tex = NULL;
         }
         s_tex = SDL_CreateTexture(r, SDL_PIXELFORMAT_ABGR8888,
-                                  SDL_TEXTUREACCESS_STREAMING, out.w, out.h);
-        s_tex_w = out.w;
-        s_tex_h = out.h;
+                                  SDL_TEXTUREACCESS_STREAMING, c->w, c->h);
+        s_tex_w = c->w;
+        s_tex_h = c->h;
+        s_a3_pr_texcreates++;
     }
     if (!s_tex)
         return 0;
 
-    SDL_UpdateTexture(s_tex, NULL, out.p, out.w * 4);
+    s_a3_pr_uploads++;
+    s_a3_pr_upload_bytes += (unsigned long long)c->w *
+                            (unsigned long long)c->h * 4ULL;
+    SDL_UpdateTexture(s_tex, NULL, c->p, c->w * 4);
     SDL_SetTextureBlendMode(s_tex, SDL_BLENDMODE_NONE);
     dst.x = x; dst.y = y; dst.w = w; dst.h = h;
     SDL_RenderCopy(r, s_tex, NULL, &dst);
+    s_a3_pr_copies++;
     return 1;
 }
-
-/* -------------------------------------------------------------- finish kit -- */
 
 /* Mirrors everything above a line into the floor below it, dimmed and, if
  * wanted, wobbling - which is most of what makes a flat drawing look like a
@@ -4679,8 +4581,35 @@ static int s_rv_base_w, s_rv_base_h;
 static unsigned s_cache_gen = 1;
 static unsigned s_rv_base_gen;
 
+/* ---- A3 counters ------------------------------------------------------
+ * Instrumentation only: one increment per call on the two staging sites, no
+ * allocation, no path change. Emitted through log_msg at a slow cadence so
+ * app.log keeps the numbers next to the step decisions. */
+static void a3_emit(void)
+{
+    if (!s_a3_frames)
+        return;
+    log_msg(LOG_INFO, "a3",
+            "A3COUNTERS style=%d step=%d frames=%llu rv_calls=%llu rv_bytes=%llu "
+            "rv_bakes=%llu rv_alloc_fail=%llu pr_calls=%llu pr_upscales=%llu "
+            "pr_upscale_bytes=%llu pr_uploads=%llu pr_upload_bytes=%llu "
+            "pr_texcreates=%llu pr_copies=%llu",
+            s_a3_style, s_a3_step, s_a3_frames, s_a3_rv_calls, s_a3_rv_bytes,
+            s_a3_rv_bakes, s_a3_rv_alloc_fail, s_a3_pr_calls, s_a3_pr_upscales,
+            s_a3_pr_upscale_bytes, s_a3_pr_uploads, s_a3_pr_upload_bytes,
+            s_a3_pr_texcreates, s_a3_pr_copies);
+    s_a3_rv_calls = s_a3_rv_bakes = s_a3_rv_alloc_fail = 0;
+    s_a3_rv_bytes = 0;
+    s_a3_pr_calls = s_a3_pr_upscales = s_a3_pr_uploads = 0;
+    s_a3_pr_texcreates = s_a3_pr_copies = 0;
+    s_a3_pr_upscale_bytes = s_a3_pr_upload_bytes = 0;
+    s_a3_frames = 0;
+}
+
 void vis_art_cache_invalidate(void)
 {
+    if (s_a3_frames)
+        a3_emit();
     s_cache_gen++;
 }
 
@@ -4694,7 +4623,10 @@ static void rv_base_bake(Cv *b)
 
 static void rv_base(Cv *c)
 {
-    Cv b;
+    Cv     b;
+    size_t n;
+
+    s_a3_rv_calls++;
 
     if (s_rv_base_gen != s_cache_gen ||
         s_rv_base_w != c->w || s_rv_base_h != c->h || !s_rv_base.p) {
@@ -4704,6 +4636,7 @@ static void rv_base(Cv *c)
         s_rv_base_w = s_rv_base.p ? c->w : 0;
         s_rv_base_h = s_rv_base.p ? c->h : 0;
         if (!s_rv_base.p) {
+            s_a3_rv_alloc_fail++;
             rv_base_bake(c);
             return;
         }
@@ -4711,8 +4644,11 @@ static void rv_base(Cv *c)
         b.w = c->w;
         b.h = c->h;
         rv_base_bake(&b);
+        s_a3_rv_bakes++;
     }
-    memcpy(c->p, s_rv_base.p, (size_t)c->w * (size_t)c->h * 4);
+    n = (size_t)c->w * (size_t)c->h * 4;
+    s_a3_rv_bytes += (unsigned long long)n;
+    memcpy(c->p, s_rv_base.p, n);
 }
 
 /* ---- quarter-resolution soft layers (Stage B) ---------------------------
@@ -9289,6 +9225,9 @@ void vis_art_frame_ms(double frame_ms)
     if (!s_drew)
         return;
     s_drew = 0;
+    s_a3_frames++;
+    if ((s_a3_frames % 60ULL) == 0ULL)
+        a3_emit();
     if (frame_ms > 0.0) {
         s_frame_ms    = frame_ms;
         s_frame_ready = 1;
@@ -9350,6 +9289,10 @@ int vis_art_draw(SDL_Renderer *r, const UiModel *m, int style,
     if (step < 1)
         step = 1;
     s_paint_step = step;
+    if (s_a3_frames && (style != s_a3_style || step != s_a3_step))
+        a3_emit();
+    s_a3_style = style;
+    s_a3_step = step;
     s_bloom_boost = (style == VIS_STYLE_RAVE) ? RV_BLOOM_GAIN : 1.0;
     c.w = w / step;
     c.h = h / step;
