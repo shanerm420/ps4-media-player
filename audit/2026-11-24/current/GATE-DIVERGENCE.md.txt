@@ -1,0 +1,10 @@
+manifest check: 18 passed, 11 failed
+exit=1
+wrote RULES.index (0 rules)
+rule index: 0 rules, 0 problems
+exit=0
+/tmp/opencode/fresh/RULES.index True 104
+manifest check: 19 passed, 10 failed
+exit=1
+tools/rule-index.py:23 FILES = os.path.dirname(ROOT)
+tools/check-manifest.py:20 FILES = os.path.dirname(ROOT)  # files/, the archive the manifest cites
