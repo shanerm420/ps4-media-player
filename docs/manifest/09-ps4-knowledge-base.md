@@ -89,16 +89,35 @@ as rules are added, corrected or retired.
 | R17 | **`GL_RGBA16F` does not exist in ES2, but a half-float render target does** — `internalformat GL_RGBA` + `type GL_HALF_FLOAT_OES` (0x8D61) completes; a port that asks for `GL_RGBA16F` gets a failure and wrongly concludes half-float is unavailable | **measured here + corroborated** | our `gpu-shader-cat.log` `TARGET … 0x8CD5 COMPLETE`; ioQuake3-PS4 reports "no GL_RGBA16F in GLES 2" and forces RGBA8 |
 | R18 | **`eglSwapInterval(1)` after `eglMakeCurrent` blocks `eglSwapBuffers` forever**; set it before the surface is created, or use 0 | **researched only** (two independent ports, not tested here) | shipofharkinian-ps4 TECHNICAL.md; Stremio-PS4 `platform_ps4.cpp` |
 | R19 | **Piglet memory comes from a flexible limit set at `scePigletSetConfigurationVSH`** — a working split is 128 MiB system shared / 512 MiB video shared / 236 MiB flexible / 4 MiB command buffers, textures and render targets out of the flexible share, a 1080p framebuffer pair over 64 MiB | **researched only** | shipofharkinian-ps4 TECHNICAL.md; the numbers to start G1's budget from |
-| R20 | **Frame timing here sits on a ~8.3 ms present floor, so differencing two configs cannot see the work** — `A empty` measured 8.19 ms and `B scene` with a 1080p ramp and 2,000 sprites measured 8.32 ms, a 0.13 ms difference for work that cannot plausibly be free; anything drawn under the floor disappears into the flip | **measured** (console, 2026-11-24) | `gpu-bloom98.log`: `CONFIG empty … ms=8.19` and `CONFIG scene … ms=8.32`. The method is repetition slope: run N passes per frame at N = 1, 4, 16, fit the line, read the slope. Differencing stays valid only for work larger than the floor |
+| R20 | **Frame timing here sits on a ~8.3 ms present floor, so differencing two configs cannot see the work** — `A empty` measured 8.19 ms and `B scene` with a 1080p ramp and 2,000 sprites measured 8.32 ms, a 0.13 ms difference for work that cannot plausibly be free; anything drawn under the floor disappears into the flip | **measured** (console, 2026-11-24) | `gpu-bloom98.log`: `CONFIG empty … ms=8.19` and `CONFIG scene … ms=8.32`. The method is repetition slope: run N passes per frame at N = 1, 4, 16, fit the line, read the slope. Differencing stays valid only for work larger than the floor. The slope is a CPU-side window, so it cannot resolve work below a frame press: [superseded A6] |
 
+| R21 | **A uniform's set must be probed before it is trusted; the location the driver returns is not always accepted by the driver's own setter** — `u_blurRadius` (reported `0x8B50 FLOAT_VEC2`, loc 49) refuses `glUniform2f` at that location with `illegal to set uniform data with different types`, and `u_gaussianKernel[0]` (loc 51) refuses `glUniform1fv` with `Failed to retrieve uniform info`, each leaving sticky `0x0502` | **measured** (console, 2026-11-24) | `gpu-bloom99.log`: the `UNI`/`SET` block, then `CONFIG n1/n4/n16 … state=VOID err=0x0502`. Rule: try each set once at link, drain the error, print the result, and skip a uniform that refuses (A4). A skipped uniform leaves the driver's defaults, so the picture is not the intended one but the pass cost is unchanged |
 **Ruled out by the driver, not by preference — do not propose these without a new
+| R22 | **One log, in `/data/Alpha PS4 test kit/`, and delete what earlier builds left** — old builds opened seven sinks at once, so every run scattered copies that had to be deleted by hand | **decided** (owner, 2026-11-24) | One path via `sceKernelMkdir` + retry, then `sceKernelUnlink` over an **exact-name** table (no patterns), logging `CLEAN removed=N refused=M`. The player's `app.log`, `app.old.log`, `config.ini` and `shots/` are never in it |
 reason:** 32-bit float render targets (`EXT_color_buffer_float` absent), float
+| R23 | **No package is handed over until `tools/check-pkg.py` passes it** — BREW00102 installed as Corrupted Data (`CE-33481-9`) then refused to start (`CE-34544-0`): its `param.sfo` had 7 entries of 11, because a killed build left it half-written and `make` kept it | **decided** (owner, 2026-11-24) | `all` depends on `check`: SFO parses, 11 entries, required keys, CONTENT_ID/TITLE_ID match the Makefile, 36-char id, `CNT` magic, not truncated. `make clean` after any interrupted build |
 blending (`EXT_float_blend` absent), framebuffer-fetch feedback (both names
+| R24 | **GPU cost comes from the GPU clock; a CPU window is only an upper bound** — draws + `glFinish` with no swap in the window still gave 16.656 ms at N = 0, 16.659 at N = 16, 33.340 at N = 64 | **measured** on this console, 2026-11-24 (A6) | `gpu-bloom102.log` BREW00102 `CONFIG empty draw_ms=16.656`, `n16 16.659`, `n64 33.340`. Wrap the frame in `GL_TIME_ELAPSED_EXT` via `EXT_disjoint_timer_query` and fit the slope on `gpu_ms`; report a CPU window as "< one frame" and name the instrument behind every number |
 absent), sRGB framebuffers (`EXT_sRGB` absent), and the software canvas as *the*
+| R25 | **Read what other PS4 homebrew and the ES2 spec already solved before a round** — two console runs (A4, A5) went into a uniform question the spec answers in one line | **decided** (owner, 2026-11-24) | Order: ES2/EGL spec → this project's [§9](09-ps4-knowledge-base.md) facts → `shipofharkinian-ps4`, `Stremio-PS4`, `shadPS4` → a console run. Findings in `PIGLET-NOTES.md`; borrowed ideas get a clean-room note ([§8](08-resources.md)) |
 answer to the graphics standard (R5, R6).
+| R26 | **Reflect on this manifest before every step, and verify that step against it** — the owner had to point out that BREW00102's timing question was already published (`shipofharkinian-ps4`) and the uniform question was answered by the ES2 spec, after both had been sent to the console as tests; work that repeats a recorded answer is waste, and it is the owner's time being spent | **decided** (owner, 2026-11-24) | Before any build, console run, research task or report step: reread [§2](02-current-focus.md), [§6](06-problems-and-fixes.md), [§8](08-resources.md), [§9](09-ps4-knowledge-base.md), `PIGLET-NOTES.md` and the amendments, and state in one line **which recorded fact the step tests** and **what is genuinely new**. If the answer is already recorded, do not spend the run - cite it instead. If a step duplicates one already in the plan, drop it. Applies to every build and every future project (G10 inherits it); a round that skips this reflection is a defect in the round, whatever the build |
 
+| R27 | **The hardware is known: never spend a run on what [§7](07-environment.md), [§9](09-ps4-knowledge-base.md), `PIGLET-NOTES.md` or the measurement rules already settle** — BREW00103 was queued to ask "why 16.66 ms" when the measurement rules have said since v112 that every frame waits on the display and lands on whole 16.7 ms multiples; the owner had to say so | **decided** (owner, 2026-11-24, A7); the 16.66 ms step itself is measured - `AGENTS.md` measurement rules and `gpu-bloom102.log` BREW00102 | Every console request names the one unknown it closes and quotes the recorded fact it does *not* contradict. A run to confirm the display contract, the module load, the memory class, the packaging route, the log path or uniform binding is refused, and the recorded line is cited instead. Hardware questions go to [§7](07-environment.md) "settled" list first; only behaviour absent from it can be tested |
 **One thing the principles forbid saying:** that the GPU is faster. Nothing has
+| R28 | **The target is the PS4 family, not this one console** — the work is PS4 software, and PS4 is the common denominator: same OS, same GLES2/Piglet, same audio, video, pad and package interfaces on every model, so working PS4 software runs on all PS4s | **owner-stated 2026-11-24** (not yet measured on a second model) | One package, no model branches. Every number names the model; a Pro result is an upper bound and the base PS4 is the budget floor. Firmware and GoldHEN are per-console setup, not features of the software |
 been drawn through it yet except a quad, so R7 stands empty until Round 2.
+| R29 | **Do not reproduce a method that already exists - reuse it** — this project has rebuilt things that were already there: a bespoke logger and an on-screen text renderer for every probe while the player already had `applog` and its own text drawing, and a uniform-binding answer the ES2 spec states | **decided** (owner, 2026-11-24) | Before writing anything, look in this order: this repository's own proven code (`src/applog.c`, the UI text renderer, the ladder), the OpenOrbis samples, a licence-clean library, then the published technique - and use it instead of re-deriving it. Write new code only where nothing fits or the licence forbids it, from the documented method and never pasted (G7 clean-room note). Two implementations of one job must name why the second exists, or the second one goes |
+
+| R30 | **Ask the owner only about how it should look; every technical question is answered here and work continues** — the owner's instruction, 2026-11-24: "the only thing that should be asked is aesthetic questions... if it has to do with programming or coding in any way... refer to the Manifest to find the solution instead of asking the user" | **decided** (owner, 2026-11-24) | A question to the owner is allowed only when the answer is a **visual choice** - which look, which palette, sharper or smoother, this layout or that. Anything technical (an API, a driver refusal, a format, a build error, a timing method, a structure, a default value) is resolved from this manifest, `AGENTS.md`, `PIGLET-NOTES.md`, `APPENDIX-LOGS.md`, `ROUND-NOTES.md`, the ES2/EGL spec, the OpenOrbis samples, then other PS4 homebrew - and the answer is written back into the manifest in the same turn, so the next session finds it. If a technical answer genuinely is not in any of those, the fallback is a decision recorded with its reason, not a question. Asking the owner to choose a technical option is a defect in the round. A **console run is not a question**: it is a step that needs their hands, and the reply gives it with the file, MD5, install route, what to do and which lines to send back |
+### Carried from other PS4 homebrew (`researched only`; text in `PIGLET-NOTES.md`)
+
+Interval 0 is right for vsync; a `gde` app gets ~768 MiB direct and ~255 MiB
+flexible, not 4.6 GB; shader compiles 110-260 ms and uncacheable; no
+`glBlitFramebuffer`, 16-bit offscreen depth. Vsync was never the probe's problem
+- `eglSwapInterval(display, 0)` is already in the sample
+(`PigletApplication.cpp:182`) - so BREW00102's 16.66 ms with no present is still
+open and BREW00103 measures it with the GPU clock.
 
 ### GPU: verified here, and what is still unknown (2026-11-23)
 
@@ -174,6 +193,34 @@ decay, no packet interpolation and no automatic gain. Full table, effects
 inventory and the two-target plan: `files/round7/README.md`.
 
 ### Amendments — A1 and A2 (text lives in `AGENTS.md`)
+
+**A7 — asking the console for a step the rules already fix.** *Before:* A6 treated
+"why 16.66 ms with no present" as an open question and BREW00103 was built to
+answer it. *After:* the measurement rules in `AGENTS.md` have said since v112 that
+**every frame waits on the display, so frame times come out as whole multiples of
+16.7 ms**; 16.656 / 16.659 / 33.340 are one, one and two refreshes, which is that
+rule obeying itself, and no run was needed to learn it. What A6 legitimately adds
+is only the *cost of the chain*, which the display cannot show and the GPU clock
+can. *Evidence:* `AGENTS.md` measurement rules; `gpu-bloom102.log` BREW00102.
+*Status:* recorded fact, restated; rule R27. **Owner-stated 2026-11-24:** "I am
+sure you're missing a lot if you're having me do any testing on known hardware."
+
+**A6 — a CPU-side timed window cannot measure GPU work below one frame.**
+*Before:* A3/R20 said cost comes from a repetition slope, and BREW00100-102
+closed the window at `glFinish` before the swap to get under the present floor.
+*After:* with **no swap inside the window at all**, BREW00102 still measured
+`draw_ms=16.656` at N = 0, `16.659` at N = 16 and `33.340` at N = 64, so the
+driver quantises any CPU-side finish to one refresh: the window can only say
+"less than a frame", and the slope it produced (0.278 ms/pass, r2 0.9509) is one
+point crossing a vblank, not a measurement of the chain. The repetition slope
+stays the method; the instrument becomes the GPU's own clock -
+`EXT_disjoint_timer_query` is published here (section 9), so a frame is wrapped
+in `GL_TIME_ELAPSED_EXT` and `gpu_ms` is read back. *Evidence:*
+`gpu-bloom102.log` 2026-11-24, five `CONFIG` lines and
+`RESULT slope ms_per_pass=0.278 intercept_ms=14.913 r2=0.9509`. *Status:*
+measured on this console; rule R24; BREW00103 implements it. Its reading
+of the 16.66 ms as an open question is [superseded A7].
+
 
 The register of rules changed by later evidence is kept in `AGENTS.md` with the rules
 it amends. **A1**: per-pass `glFinish` as a timing method. **A2**: `u_blurRadius`
@@ -328,178 +375,10 @@ Each of these is an audit line against every look, not a wish list.
 5. Text and chrome on SDL while visuals move to the GPU: possible, and what it
    costs in a composited frame.
 
-### The three other logs the owner found (read 2026-11-23, all ruled out)
+### Logging notes (moved)
 
-| File | What produced it | Relation to the Piglet run |
-|---|---|---|
-| `Loader_Logs.txt` (9,870 bytes) | the console's own loader verifying an RSA/SHA-256 signature on `/mnt/sandbox/NPXS39041_000/app0/Media/rsa.pub`, repeated dozens of times | **none.** NPXS39041 is a system application (its sandbox, its `Media/` folder), the lines carry no date, and the words BREW00093, Piglet, EGL and GL do not appear. It is a system app's sign-in/verification loop, not our sample. |
-| `memory.log` (7,200 bytes) | `sceLibcMspaceCreate()` / `sceLibcMspaceMallocStatsFast()` pairs, one pair per line, no timestamps, no title id | **none.** It is a libc heap/mspace diagnostic dump — the kind a plugin or a debug build writes — and has no event in it. |
-| `UnityOrbisBridge.log` (305 bytes) | a Unity-Orbis bridge: `Currently running on PlayStation 4 (12.50)`, `App has broken from the sandbox in 0s!`, SCE libraries loaded, SCE message dialog | **none, and it is six days older.** Dated 11/17/2026 02:57:47, firmware 12.50, and the bridge's own log — the Piglet run was on 11/23 on 12.52. |
-
-So none of the three can say anything about the empty Piglet log. They are worth
-one fact each: the console does run apps that write their own logs to disk, and
-`UnityOrbisBridge.log` shows a homebrew app escaping its sandbox and writing a
-dated log successfully on 12.50 — which supports "writing a log from homebrew
-works here", and therefore supports the reading that v1's redirect itself failed
-rather than every write being impossible. Marked as an inference, not a result.
-
-### Logging from homebrew on 12.52, and where /data is writable (2026-11-23)
-
-**Verified in this project's own code and packages:**
-
-- The player writes `/data/ultimate-ps4-media-player/app.log` with
-  `fopen(..., "w")` (`src/applog.c:225`), and its earliest boot line opens the
-  same path with POSIX `open(..., O_WRONLY|O_APPEND|O_CREAT, 0644)` and `write()`
-  (`src/main.c:91`). The owner pulls that file over FTP after every run, so
-  **libc file I/O into a `/data` subfolder is proven on this console** — the
-  method is proven, the folder is not.
-- `sceKernelOpen`, `sceKernelClose`, `sceKernelWrite`, `sceKernelWritev` and
-  `sceKernelFsync` are declared in `orbis/libkernel.h` (lines 339, 81, 451, 453,
-  143) and linked through `-lkernel`; `dup2` is at `unistd.h:40`;
-  `sceKernelGetFsSandboxRandomWord` at `libkernel.h:185`. All used by the v2
-  package.
-- **The toolchain's `fcntl.h` defines only `O_RDONLY`/`O_WRONLY`/`O_RDWR`.** An
-  open that means to create a file has to supply `O_CREAT`/`O_TRUNC`/`O_APPEND`
-  itself. This is a trap worth remembering: `sceKernelOpen(path, O_WRONLY, 0666)`
-  cannot create anything, and a silent failure follows.
-- The first logged package's `eboot.bin` carries `/data/piglet-gpu-test.log`
-  (one string), so its redirect compiled in; the file still came back empty.
-
-**Answered by the v3 run, 2026-11-23:** the `/data` root, `/data/pkg` and
-`/data/ultimate-ps4-media-player` all accepted `sceKernelOpen` with
-`O_WRONLY|O_CREAT|O_TRUNC` from this title — `path OK … (fd 5)`, `(fd 6)`,
-`(fd 7)` — so a title **can** create files at the `/data` root and in
-`/data/pkg`, and `O_CREAT`/`O_TRUNC` with the FreeBSD 9 values work at all
-three. The three USB mounts answered `rc 0x80020002`, which is "no such file or
-mount", not "permission denied".
-
-**Still unknown, and not to be repeated as fact:** whether `freopen` on stdout
-works in this libc (v1's silence says it did not, but v1 could not report its
-own return); whether stdio buffers survive a PS-button close (v3's kernel writes
-did, which is why it fsynced each line).
-
-**Where the sources disagree** (five phrasings, checked 2026-11-23):
-
-- ConsoleMods' *PS4:Files and Directories* describes `/data` as where **homebrew
-  apps keep their own folders** (Apollo's user folders are the example) and
-  lists `/mnt/usb0`, `/mnt/usb1`, `/mnt/usb2`, `/mnt/ext0` for removable
-  storage — which supports "a `/data` subfolder per title", the pattern this
-  player already follows, and the USB paths v2 tries. It does not say the
-  `/data` root itself is writable by a title.
-  <https://consolemods.org/wiki/PS4:Files_and_Directories>
-- Two install guides (MacMyths, TechBloat) call `/data/` or `/data/pkg/`
-  "writable", but they mean **writable over FTP by the user**, not by a running
-  app's sandbox — a different permission subject, and the reason v1's silent
-  failure cannot be ruled out from documentation alone.
-  <https://macmyths.com/how-to-install-pkg-files-on-ps4-over-usb-and-ftp>
-- The PS4 Developer Wiki's *Homebrew Enabler* page says a HEN-loaded fSELF has
-  "system permissions, for example RW access to all filesystem partitions" —
-  the direct counter-claim, predicting `/data` root *is* writable.
-  <https://www.psdevwiki.com/ps4/Enabling_Homebrew> Unresolved; v2's six-path
-  table answers it in one run instead of an argument.
-- OpenOrbis' *Building Homebrew* says only that `/app0/` is the package root and
-  that bundled data must be inside the package; it is silent on writable paths,
-  so it neither supports nor contradicts the two readings above.
-
-### Round-state notes carried over from `AGENTS.md` (2026-11-24)
-
-Moved out of the rules file to bring it under the G9 ceiling. These are
-history and measurement; the present tense lives in the where-we-are block
-at the top of [§2](02-current-focus.md). Nothing here was rewritten — the text is as it stood.
-
-- Latest build: **v116** — `files/Ultimate-Media-Player-v116.pkg`,
-  MD5 `7e215289a0f6ec58a55c50e4058e6b3c`. **On the console 2026-11-23** — the
-  first run of this build: Square clean (worst paint 18.5 ms), Liquid at step 2,
-  15 fps. The three look tweaks from the v114
-  television photos: a glint with a bright core and a wide halo (+66 luma over
-  567 pixels, all below the lip, against +52 over 262 in v114), spray that
-  leaves the crests instead of lying across the tank, and a floor lifted 0.03 of
-  the frame. Liquid only; NEON/WORM/RAVE DJ byte-identical to v114. Host bench
-  26.74 / 15.08 / 11.36 ms at steps 1/2/3, and reverting any one tweak does not
-  make it faster, so all three are free within noise. Notes in `files/round5/`.
-- Previous: v115 — `files/Ultimate-Media-Player-v115.pkg`,
-  MD5 `25f3af25c68a57fb8509de28fd83e40e`. The room background is built in
-  slices, so a skin change (SQUARE on the main screen, the 467 ms freeze in
-  three sessions' logs) no longer stops the screen. Not yet confirmed on
-  hardware. Notes in `files/round4/`.
-- Previous: v114 — `files/Ultimate-Media-Player-v114.pkg`,
-  MD5 `b98a943f1c72f7a2582cb4e61475b985`.
-  Round 3 finished: the tank's front glass and floor now have real presence,
-  the spray is bigger and lasts longer, and five glints travel along the crests.
-  The crest line and the foam code were not touched in v113 or v114. Most of
-  the glass was missing on the console because it was gated behind a quality
-  step the console never climbs back from; it now draws at every step.
-  Notes and renders in `files/round3/`.
-  Round 3 (first pass): Liquid's water body is lit by a smoothed copy of the
-  surface instead of the per-column crest value (which saturated and made the
-  flat cyan), the depth ramp runs green under a crest to deep blue with a
-  longer-lived blue channel, and the water line rises 8% of the frame via the
-  new `[liquid] surface_lift`, with two soft lamps in the headroom. Crest and
-  foam untouched; NEON, WORM and RAVE DJ render byte-identical to v112. Notes
-  and before/after sheets in `files/round3/`.
-  **Hardware test (4.7 min, step 3):** Liquid runs 50.0-60.8 ms a frame
-  (3-3.6 vsyncs) with paint 21.4-24.8 and flush 22.2, against 62.5-63.2 ms in
-  v112 - so the new water costs no frames, and this session is slightly faster.
-  The ladder dropped 1 -> 2 -> 3 on TESSERACT at 98 s (156.6 ms, 110.1 ms) and
-  stayed at 3. Liquid was on screen full-screen at 152-155 s and 253-257 s, but
-  no capture of it came back, so the *look* is still unconfirmed on the console.
-  The 467 ms Square freeze on the music screen happened again (15.9 s).
-- Previous: v113 — `files/Ultimate-Media-Player-v113.pkg`,
-  MD5 `ce7c55f0749743620a86630792bc2449` (Liquid water body, depth, framing).
-- Rollback before that: v112 — `files/Ultimate-Media-Player-v112.pkg`,
-  MD5 `3714cd0a30921b72f226e877926fee4f` (ladder judges the whole frame,
-  Stage B machinery behind `soft_quarter`, off; logs in `files/round2/`).
-- Rollback before that: v111 — `73b67059b6ddfec44e9942520c472770`
-  (log clock + screenshot capture), and v110 —
-  `05fc21e97fea99b0d382ffe9be6762bd` (cached skins).
-- Source snapshots in `files/archive/`: v104
-  (`d69a49a195ffcd9808506a38fd47017e`), v110
-  (`1a81ec3cef4ccfd0b653b74f3ee9db3c`, cited, not archived). Make a new one when asked.
-- Measured facts from Round 3 (host, 1080p, 100 frames x3, Liquid): v113
-  costs 25.94 / 13.93 / 10.88 ms at steps 1 / 2 / 3 against 22.19 / 12.05 /
-  9.34 for v112, i.e. 10-17% more depending on the run (the host drifts 4-8%
-  between sessions; the same v113 code measured 23.86 / 12.95 / 10.29 in an
-  earlier session). That is inside the 20% ceiling; on the console it is about
-  3 ms on a 62-66 ms frame. The cost is the two headroom lamps and the extra
-  column pass.
-- **The Liquid body must not be lit by the per-column crest value.** It is a
-  height divided by 0.012 m, a swell here is about 4 mm, so it pins at 1 across
-  the tank - that is exactly what made the water one flat cyan and drew the
-  height field as vertical bands. Light the body from a smoothed height with a
-  palette scaled to the swell (FL_BODY_M = 30% of crest_m) and keep the raw
-  column value for the rim and the foam only.
-- Widening the light shafts to soften them is expensive: a halo ellipse costs
-  +2.0 ms at step 1 and +1.4 ms at step 3, a 25% wider core +1.8 ms at step 3,
-  because a wide ellipse covers the whole canvas once the canvas is stepped
-  down. Dimming the core is free.
-- **A look element gated behind a quality step is a look element the console
-  never shows.** The console settles on step 3 within seconds and does not climb
-  back, so Liquid's side panes, the glow over the water and the pane highlights
-  (all behind `s_paint_step <= 2`) were simply absent on hardware - that, and
-  not the design, is why the glass read as a thin strip. Cheap elements belong
-  at every step; at a stepped canvas they cost a few thousand pixels.
-- **Bench an untouched look as a drift control.** The host ran 6-10% slower in
-  the v114 session (Rave DJ, untouched, went 53.72 -> 57.36 ms at step 1), so
-  raw before/after percentages from different sessions are not comparable.
-  Liquid at step 1 reads +22% raw and +14% net of that drift.
-- Round order still to come: A3, A4, Stage C, D, E.
-- Measured facts from Round 2 (host, 1080p, 100 frames x3): the SDL flush costs
-  a constant 3.6-4.1 ms at every step (it is one full-frame canvas copy into the
-  24-bit window surface); the rasterizer's own draw is 5-50 ms depending on look
-  and step; run-to-run spread is about +/-5%. Quarter-res soft layers and a
-  separable canvas upscale both measured *slower* and are not in the build.
-- **Step-3 appearance (host render of v112, `VIS_STEP=3`, 2026-11-23):**
-  LIQUID and WORM stay close to full resolution; RAVE DJ and NEON visibly
-  soften. Numbers are in `files/round2/step3-quality/metrics.txt`; the edge
-  metric is dither-dominated on the smooth looks, so the images are the
-  evidence. The console screenshot round trip is therefore optional, not
-  blocking.
-- **v112 on hardware (2026-11-23, 8 minutes of log, two sessions):** the
-  ladder fix works — it dropped 1 -> 2 -> 3 with whole-frame reasons and the
-  session then held step 3; Rave at step 3 is 66.7 ms (4 vsyncs) against the
-  ~100 ms it used to take; the flush floor is 21.6-24.5 ms with a music list
-  that draws nothing; every look is 62-82 ms. All 18 styles were visited. The
-  user's `config.ini` predates v112 (`quality.soft_quarter` reported missing,
-  default 0 in effect).
+The three stranger logs that were read and ruled out, and the survey of where
+`/data` accepts writes on 12.52, are in **`APPENDIX-LOGS.md`** - evidence behind
+R22, not rules (G9).
 
 [Manifest index](README.md) · [Back to the index](../README.md)

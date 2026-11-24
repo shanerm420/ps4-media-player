@@ -10,6 +10,41 @@ reported, not documentation.
 PKGs moved by FTP on port 2121**, packages installed from `/data/pkg` through
 Package Installer with source **Hdd**. Every field below matches that answer.
 
+**Platform scope: this is PS4 software, and it is for every PS4** (owner-stated
+2026-11-24). The target is the **PS4 family — base, Slim and Pro — as one
+platform**, not one machine. Every model runs the same Orbis OS and the same
+interfaces this project uses (Piglet/GLES2, `sceAudioOut`, `libSceAvPlayer`,
+`scePad`, the same package format and install path), so **software that works on
+PS4 runs on all PS4s**, and nothing may be designed around a Pro-only behaviour.
+A model that differs in clocks or GPU capability changes only how fast the same
+code gets there, never what it does. Consequences, kept as rules:
+
+- **One package for every model.** No model-specific builds, switches or paths.
+- **A Pro number is an upper bound.** Every measurement names the model it ran on
+  (this owner's console is a Pro, [§7](07-environment.md)); the base PS4 is the floor a budget must
+  fit, so a look or feature that only holds on a Pro does not hold.
+- **Per-console prerequisites are not software requirements.** Firmware 12.52,
+  GoldHEN and FTP are this machine's setup, recorded in [§7](07-environment.md); the software claims
+  nothing beyond PS4 + the APIs above. Rule R28.
+
+**Settled hardware — do not spend a console run confirming any of this** (R27).
+Each line is a fact with its source; a run is only earned for behaviour that is
+absent from this list.
+
+| Fact | Source |
+|---|---|
+| 1080p60, vblank 16.67 ms, flips per vblank, `sceVideoOutSetFlipRate` divides it; **frames land on whole 16.7 ms multiples** | `shadPS4` videoout; `AGENTS.md` measurement rules; BREW00102 |
+| Piglet = OpenGL ES 2.0 / GLSL ES 1.00, EGL 1.4; `eglSwapInterval(display, 0)` already set by the sample | BREW00093 log; `PigletApplication.cpp:182` |
+| `libScePigletv2VSH` + `libScePrecompiledShaders` load from `/<sandbox>/common/lib/`, `module_start() = 0`; **no `libGLESv2.sprx`** (`0x80020002`) | BREW00093, BREW00095-103 |
+| Blobs `texmap`, `bright`, `blur1`, `blur2` exist and link; bloom needs no GNM path | BREW00102 log `PROG … link=1` |
+| A uniform is set on the **bound** program; `glUseProgram` first | ES2 spec; A5; BREW00102 23/23 accepted |
+| No 32-bit float targets or float blending; half-float targets present; `EXT_disjoint_timer_query` advertised | [§9](09-ps4-knowledge-base.md) GPU facts; BREW00103 |
+| Shader compilation 110-260 ms each, no disk cache (`GL_PROGRAM_BINARY_LENGTH` rejected) | `shipofharkinian-ps4` (`researched only`) |
+| `gde` class: ~768 MiB direct / ~255 MiB flexible | same source, `researched only` (measure only if a port needs the number) |
+| Packages: FTP 2121 → `/data/pkg/` → Package Installer `Hdd`; `param.sfo` needs 11 entries or CE-33481-9 | owner; R23 |
+| Logs: `sceKernelOpen`/`Write`/`Fsync`, one path in `/data/Alpha PS4 test kit/`, sweep old ones | [§6](06-problems-and-fixes.md); R22; BREW00102 |
+| Pad opens as a plain joystick, button numbers as [§9](09-ps4-knowledge-base.md) records | v111+ logs |
+
 **GPU test artifact (2026-11-23):** built from OpenOrbis toolchain **0.5.2**
 (CHANGELOG head; not a git checkout), clang 18.1.8, sample
 `samples/piglet` unmodified. Package **`PIGLETGPUR000000`**, title id

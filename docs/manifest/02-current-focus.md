@@ -11,13 +11,15 @@ knowledge in [§9](09-ps4-knowledge-base.md); this block is only ever the presen
 | Field | State |
 |---|---|
 | Latest player build | **v118** — `files/Ultimate-Media-Player-v118.pkg`, MD5 `349943cbd65ddb1580a9e47aec7de1b0` — logging only, **built, not yet run on the console**; v117 `290e7edab55e864e35d497b369828193` is the rollback |
-| Latest GPU package | **BREW00098** — `files/GPU-Bloom-Cost-Probe-BREW00098.pkg`, MD5 `a5607cc90de5a17491566a4e949ef4d1` — **ran 2026-11-24: two of five configs, then a clean exit on a uniform type**, see [§6](06-problems-and-fixes.md) |
-| Built and not yet run | v118 |
-| Already run on the console | Piglet sample v3 (GPU confirmed), BREW00094 catalogue (82 blobs), BREW00095 (502 at first frame), BREW00096 (85–100 fps, submission timings only), BREW00097 (15 fps; `glFinish` and vec4 bugs, see [§9](09-ps4-knowledge-base.md) A1/A2), BREW00098 (A empty 8.19 ms, B scene 8.32 ms, then C died on a uniform type — and both numbers are the present floor, not the work) |
-| Blocking question | What does a 1080p bloom chain cost? BREW00098 could not answer: two of five configs ran and both sat on an 8.3 ms present floor, so the draw cost is hidden behind the flip |
-| Unblocked by | a build that measures by repetition slope instead of by differencing (BREW00099, [§6](06-problems-and-fixes.md)) — no console run until then is worth its two minutes |
-| Next action | build the repetition-slope probe (BREW00099): N passes per frame at N = 1, 4, 16, fit the line, slope is the cost |
-| Last console-verified | 2026-11-24, the BREW00098 log |
+| Latest GPU package | **BREW00103** — `files/GPU-Bloom-Slope-Probe-BREW00103.pkg`, MD5 `3bde518b33bf17627d5ab559b84f0084` — GPU-clock slope per A6/R24, `CLEAN` line now reported, one log path with automatic cleanup, package gated by `tools/check-pkg.py`, **built 2026-11-24, not yet run** |
+| Built and not yet run | v118; BREW00103 |
+| Already run on the console | Piglet sample v3 (GPU confirmed), BREW00094 catalogue (82 blobs), BREW00095 (502 at first frame), BREW00096 (85–100 fps, submission timings only), BREW00097 (15 fps; `glFinish` and vec4 bugs, see [§9](09-ps4-knowledge-base.md) A1/A2), BREW00098 (A empty 8.19 ms, B scene 8.32 ms, then C died on a uniform type — and both numbers are the present floor, not the work), BREW00099 (empty 16.68 ms = one vsync; n1/n4/n16 all VOID on `0x0502`), BREW00101 (one log folder works; all five configs `ok`; every `SET` refused with `Invalid program!` — the program was never bound), BREW00102 (installed after the package fix; **all 23 `SET` accepted**; panel legible; bloom visible; 16.656 / 16.654 / 16.658 / 16.659 / 33.340 ms for N = 0/1/4/16/64 = 1/1/1/1/2 refreshes) |
+| Blocking question | **None left for the bloom proof of concept.** It is answered to decision grade: one chain is under half a millisecond by the CPU bound, so a 6-pass chain is at most ~3 ms of a 16.7 ms frame - affordable, whatever the exact figure. What is still open is the *player* side: the video path and the filename logging (v118) |
+| Unblocked by | the owner's next console run of **v118**, which is logging no source has supplied yet. BREW00103 stays built and unrun on purpose: it would tighten the bloom figure from "under half a millisecond" to a decimal, and no decision needs that (R27) |
+| Next action | run **v118** (`files/Ultimate-Media-Player-v118.pkg`, MD5 `349943cbd65ddb1580a9e47aec7de1b0`) and pull `app.log`: the `video: SRC` / `video: RATE` / `pull_rounds` lines are the only way to settle the 16 fps question |
+| Reflection (R26/R27) | Before that run: **already recorded** - the 16.7 ms display step, the uniform binding, vsync, packaging, logs, the module load, the memory class, the blob set ([§7](07-environment.md) settled list). **Genuinely new** - the file's codec, rate, duration and bitrate, and whether the `??????` names arrive mangled or the font lacks glyphs. Both need this console and no source has them |
+| Last console-verified | 2026-11-24, the BREW00102 log (GPU) and v117 (player) |
+| Published | `shanerm420/ps4-media-player` — docs tree and `AGENTS.md` on `main`, tag `docs-2026-11-24`, CI `docs` green, verified file for file 2026-11-24 |
 
 **Focus: the GPU is reachable. Piglet ES2 runs on this console.** The v3 stage
 log answered everything it was built for on the first run, and went past the
