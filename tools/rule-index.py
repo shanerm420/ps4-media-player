@@ -11,7 +11,13 @@ validates the part that drifts: a rule that quotes a number must say where the
 number came from, and a rule that claims "measured" must name something we can
 check - a log file that exists, an MD5, or a build id.
 
-Read-only apart from regenerating files/RULES.index. Exit 1 on failure.
+Read-only apart from regenerating files/RULES.index, and --check does not write at
+all: it compares what is on disk with what would be generated, names the path, and
+exits. Exit 1 on failure, 2 when --check finds no index to compare against - a
+missing index is a refusal, never an instruction to create one.
+
+    python3 tools/rule-index.py            # regenerate the index
+    python3 tools/rule-index.py --check    # compare only; never write
 """
 
 import json
@@ -27,6 +33,8 @@ HISTORY = os.path.join(FILES, "HISTORY.md")
 OUT = os.path.join(FILES, "RULES.index")
 
 STATUS = ("measured", "researched only", "researched", "assumed", "contested")
+
+CHECK = "--check" in sys.argv
 
 logs = set()
 for base, _d, names in os.walk(FILES):
@@ -110,12 +118,26 @@ payload = {"generated_from": ["MANIFEST.md section 9", "AGENTS.md G-rules"],
            "count": len(index), "rules": index}
 text = json.dumps(payload, indent=1, ensure_ascii=False) + "\n"
 old = read(OUT)
-if old != text:
+if CHECK:
+    # A check that writes is not a check. OUT resolves beside the repository, so a
+    # published copy that regenerates it there produces the artefact the next run
+    # then trusts - which is how a zero-rule index passed for a real one.
+    if not os.path.exists(OUT):
+        print("REFUSED: no RULES.index at %s" % OUT)
+        print("--check never writes one; run without --check where the index belongs.")
+        sys.exit(2)
+    if old != text:
+        print("STALE %s: %d bytes on disk, %d bytes regenerated"
+              % (OUT, len(old.encode("utf-8")), len(text.encode("utf-8"))))
+        problems.append("RULES.index at %s is stale - regenerate it" % OUT)
+    else:
+        print("RULES.index up to date (%d rules) at %s" % (len(index), OUT))
+elif old != text:
     with open(OUT, "w", encoding="utf-8") as f:
         f.write(text)
-    print("wrote %s (%d rules)" % (os.path.basename(OUT), len(index)))
+    print("wrote %s (%d rules)" % (OUT, len(index)))
 else:
-    print("RULES.index up to date (%d rules)" % len(index))
+    print("RULES.index up to date (%d rules) at %s" % (len(index), OUT))
 
 # The published index is checked by CI with the same rule: a measured rule must
 # carry evidence in the file, not only in the parser's head.
