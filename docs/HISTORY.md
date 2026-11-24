@@ -1271,3 +1271,31 @@ MD5, same bytes), 6,619,136 B, MD5
 - `AGENTS.md` carried the older, softer version of this rule ("questions are
   allowed when the owner asks to be consulted"); it was rewritten in place to
   match R30 without adding a line, so the 640-line ceiling still holds.
+
+### 2026-11-24 — Reading the manifest again: the roadmap still called a finished thing "next"
+
+- The owner asked for another full read and an amendment if it needed one. It did
+  - in the roadmap, in the round plan, and in the predictions register.
+- **§3 roadmap, two rows out of date.** "Prove one GPU path: one effect (bloom)"
+  still pointed at the sample's 120 fps textured quad as the evidence, when the
+  bloom chain itself has since drawn on the console (BREW00102: `bright`/`blur1`/
+  `blur2` linked, 23/23 uniforms accepted, a real pass at 480x270 between 1080p
+  targets). "Proof of concept: one look on the GPU ..." was still "next, after the
+  video-logging round", when the *effect* half is done and cost-bounded; the
+  **look** port is the part still waiting on the owner. "Research PS4 GPU
+  capability" said "not started" while `PIGLET-NOTES.md` and the graphics
+  principles carry the research and its disagreements.
+- **A malformed table row, fixed.** The MilkDrop warp-feedback row and the v118
+  row had been glued together by a doubled `||`, so two items rendered as one.
+  They are two rows again, and the warp-feedback row now reads "unblocked; the
+  bloom chain is the first effect through it".
+- **§11 Round 2 is no longer a future plan.** It opens with a status line: effect
+  proven 2026-11-24, one chain under ~0.5 ms by the CPU bound and a six-pass chain
+  at most ~3 ms, look port and SDL/Piglet sharing still unproven. Its logging
+  instruction ("one sink at `/data` and one in the player's folder") contradicted
+  R22 and is corrected to **one** sink in `/data/Alpha PS4 test kit/`.
+- **A prediction came true late, and lost.** P3 said the four-pass bloom chain
+  would cost 1-3 ms; BREW00102 bounds it under ~0.5 ms, so the estimate was two to
+  six times too pessimistic. Recorded as a miss on the cheap side, which is the
+  useful kind: it says the cost model was over-cautious, not that the measurement
+  is wrong. The register keeps the frame it was written in.
