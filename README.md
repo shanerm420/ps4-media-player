@@ -2,7 +2,7 @@
 
 Rules, measured facts and the project's build history live in
 [docs/](docs/README.md). If you are an AI agent, read [AGENTS.md](AGENTS.md)
-first — it states the rules, the read order and what is known versus assumed.
+first - it states the rules, the read order and what is known versus assumed.
 
 # Ultimate PS4 Media Player
 
@@ -13,14 +13,19 @@ build that installs as **Ultimate PS4 Media Player**.
 
 > **Status:** builds, links and packages cleanly; the host-side audio and
 > subtitle code passes 27 assertions and every screen is rendered at 720p,
-> 1080p and 1440p in `preview/`. It has **not been run on a retail console yet**,
-> so playback timing, colour and USB numbering still need a hardware pass.
+> 1080p and 1440p in `preview/`. It runs on a jailbroken console (HEN/GoldHEN,
+> firmware 12.52): v117 is the last build run there, and v118 adds video metadata
+> logging. Playback timing, color and the pad mapping are still being measured.
 > Built against OpenOrbis toolchain v0.5.4 on Ubuntu 24.04.
+>
+> The working rules, the measured facts and the current plan live in
+> [AGENTS.md](AGENTS.md) - read that before changing anything.
 
 ## Download
 
-The latest build is attached to
-**[Releases](https://github.com/shanerm420/ps4-media-player/releases/latest)**:
+The build for the console is attached to
+**[Releases](https://github.com/shanerm420/ps4-media-player/releases)** when a
+release is published:
 `IV0000-BREWMEDI1_00-ULTIMATEMEDIA000.pkg` (6.6 MB). It is fake-signed, so the
 console must be jailbroken with HEN/GoldHEN running. Install steps are under
 [Install on the console](#install-on-the-console); to build it yourself, see
@@ -86,10 +91,12 @@ bundled 8x8 pixel font instead of Inter and no MP3 decoder, so run it first.
 The package is fake-signed, so the console must be jailbroken with HEN/GoldHEN
 running. This is the same step the [download](#download) skips past.
 
-1. Copy the `.pkg` to the root of a USB stick (FAT32 or exFAT) or FTP it to
-   `/data/pkg/`.
+1. FTP the `.pkg` to **`/data/pkg/`** on the console. GoldHEN's FTP server is on
+   port **2121** and is switched on under GoldHEN → Server Settings. (A USB
+   stick works too, but FTP is what this setup uses.)
 2. On the PS4 open **Settings → Debug Settings → Game → Package Installer**
-   (GoldHEN) and install the file.
+   (GoldHEN), set the package source to **Hdd [`hdd:/data/pkg/`]** and install
+   the file. FTP only copies it there; the installer is what installs it.
 3. Launch **Ultimate PS4 Media Player** from the home screen.
 
 Media is read from the folders listed under *Where it looks for media* below.
@@ -185,6 +192,17 @@ list and a subtitle) and writes every screen: `out-browser.png`,
 `out-main.png`, `out-eq.png`, `out-video.png`, `out-settings.png` and
 `out-fullscreen.png`. This catches layout faults - overlapping text, malformed rounded
 corners, bars that overflow their panel - that only show up when you look.
+
+## Speed: PC preview vs console
+
+Numbers from the PC preview are a ranking, not a forecast. On the console the
+renderer is the same software path but the CPU is slower and every frame waits
+for the display's vertical blank, so a frame time is a whole multiple of
+16.7 ms and a change only shows when it drops under the next boundary. The one
+paired measurement so far is the Rave look at step 2: 100.1 ms on the console,
+roughly four times what the PC preview reports for the same look, so treat a
+preview number as a quarter of what the console will do and report console
+figures in milliseconds and in vsyncs (100.1 ms is six).
 
 ## Verified on a PC
 
@@ -282,40 +300,80 @@ too, and a path reached twice is only listed once.
 
 ## Controls (DualShock 4)
 
+SHARE is the console's own button - it opens the share menu and captures
+screenshots and clips - so the player never acts on it. Every action below has
+a button of its own.
+
+Touching the touchpad (the click, not a swipe) saves the frame being shown as
+an uncompressed BMP in `shots/` next to `app.log`, named with the build, the
+visualizer style and the quality step. The folder keeps the newest 20. It is
+the one button the player does not otherwise use, so a capture never pages,
+seeks or changes a setting.
+
+Music library:
+
 | Input | Action |
 |---|---|
-| D-pad up/down | select track |
-| X | play / pause |
-| Square | stop |
+| D-pad up/down | select a track (or a row in Artists / Albums / Genres) |
+| X | play / pause; opens the highlighted artist, album or genre |
+| Square | next library view: tracks, artists, albums, genres |
+| Triangle | next visualization style |
 | L1 / R1 | previous / next track |
-| D-pad left/right | volume −3 / +3 dB |
-| Triangle | equalizer overlay (up/down = ±1 dB, left/right = band, preamp is the band after 16 kHz) |
-| SHARE | open the drive browser |
-| Circle | quit |
+| L2 / R2 | page up / page down through the list (analog triggers, one page per pull) |
+| D-pad left/right | volume -1 / +1 dB |
+| L3 | full-screen visualization |
+| R3 | equalizer |
+| Options | drive browser |
+| Circle | out of a folder, then back to Home |
 
-In the drive browser:
+Full-screen visualization: X play/pause, up/down volume, L1/R1 previous/next
+track, left/right seek 10 s, Triangle next look, L3 back to the window, R3
+equalizer, Circle back. The volume change shows as a short reading above the
+look, in the same pill the video confirmations use.
+
+In the drive browser — the file manager. It lists every file in a folder, not
+just the ones the player can open: Cross plays the media kinds and says
+"cannot play this file" for the rest, while copy, cut, paste and delete work on
+anything.
 
 | Button | Action |
 |---|---|
 | D-pad up/down | move through drives, folders and files |
-| L1 / R1 | page up / page down |
+| R1 | page down |
 | X | open a drive or folder, play the selected file |
-| Square | rescan the drives and folders |
-| Circle | one level up, then back to the library |
-| Triangle | equalizer |
-| SHARE | back to the library (or pick `ALL MEDIA (LIBRARY)`) |
+| Square | delete the selected file (asks first) |
+| Triangle | copy the selected file |
+| L1 | cut (move) the selected file |
+| Options | paste the copied or cut file |
+| L3 | rescan the drives and folders |
+| R3 | equalizer |
+| Circle | one level up, then back to Home |
 
-While a video is on screen:
+In the video section, windowed:
+
+| Button | Action |
+|---|---|
+| X | play the highlighted file |
+| D-pad up/down | move the highlight |
+| L1 / R1 | move the highlight one file back / forward |
+| Triangle | full-screen player |
+| Options | settings card |
+| R3 | equalizer |
+| Circle | back to Home |
+
+While a video is on screen (full screen):
 
 | Button | Action |
 |---|---|
 | X | pause / resume |
 | D-pad left/right | seek 10 s back / forward |
-| Square | stop and return to the library |
+| D-pad up/down | volume +1 / -1 dB |
 | L1 / R1 | previous / next file |
-| Triangle | video settings card |
-| Options | subtitles on / off, with a short confirmation that fades out |
-| Circle | back to the library (does not quit) |
+| Square | subtitles on / off, with a short confirmation that fades out |
+| Triangle | back to the windowed player |
+| Options | settings card |
+| R3 | equalizer |
+| Circle | back one level (does not quit) |
 
 Any button brings the transport bar back; on its own it hides again 3 seconds
 into playback, leaving just the picture and any subtitles. Pausing, seeking or
@@ -327,9 +385,27 @@ or Circle closes it.
 | Row | Values |
 |---|---|
 | Aspect ratio | FIT (whole frame), FILL (crop to cover), STRETCH (fill, distorted) |
-| Brightness | −100 … +100, applied to the picture only |
+| Brightness | -100 ... +100, applied to the picture only |
+| Color | 0 ... 250%, 100% leaves the picture alone |
+| Sharpness | 0 ... 100%, 0 leaves the picture alone |
 | Subtitles | OFF, or each sidecar file found next to the video |
 | Subtitle size | SMALL / NORMAL / LARGE |
+
+Pictures:
+
+| Button | Action |
+|---|---|
+| D-pad up/down | previous / next picture (zoom mode: zoom out / in) |
+| L1 / R1 | previous / next picture |
+| X | zoom mode on / off |
+| Square | rotate 90 degrees |
+| Triangle | full screen |
+| Options | settings card |
+| R3 | zoom mode on / off |
+| Circle | back to Home |
+
+In full-screen pictures: Triangle back to the window, R3 zoom mode, Options
+settings, Circle back.
 
 ## Video
 
@@ -355,7 +431,7 @@ Per playback the code supplies:
 * **Video** — `sceAvPlayerGetVideoDataEx` returns 8-bit YUV420 frames. They are
   converted to RGBA with BT.601 integer maths and uploaded to one SDL streaming
   texture, recreated only when the resolution changes. 10-bit files are refused
-  rather than shown with wrong colour.
+  rather than shown with wrong color.
 * **Audio** — `sceAvPlayerGetAudioData` returns interleaved 16-bit PCM at the
   track's own rate. It becomes float, is resampled to 48 kHz and downmixed to
   stereo, then joins the same EQ / volume / limiter chain as the MP3 path, so the
@@ -399,7 +475,7 @@ first if a title misbehaves:
    may implement identically.
 
 **This has been compiled, linked and packaged, but never run on a console.**
-Frame timing, colour and audio drift are the things only hardware can answer.
+Frame timing, color and audio drift are the things only hardware can answer.
 
 ## Resources this is built on
 
@@ -430,7 +506,7 @@ Frame timing, colour and audio drift are the things only hardware can answer.
 1. **MP3 player** — done on the audio side (tested), needs a hardware pass for
    `sceAudioOut` timing and the SDL2 UI.
 2. **Video** — implemented with aspect / brightness / subtitle settings; needs a
-   hardware pass for frame pacing, colour, A/V drift and subtitle timing, and a
+   hardware pass for frame pacing, color, A/V drift and subtitle timing, and a
    decision on NV12 vs I420 if the reference layout is wrong.
 3. **Codecs** — add WAV (trivial), then FLAC (dr_flac), then Vorbis/Opus.
 4. **Library** — playlists, folder navigation, metadata from ID3 tags.

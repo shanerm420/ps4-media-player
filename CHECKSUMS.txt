@@ -6,11 +6,11 @@ e234074a0217a21dfff4f83ef52853e6  .github/workflows/docs.yml
 90d6fac341389a7e03d44db0456b1c4d  APPENDIX-LOGS.md
 ada8ca06888311d5eac38a3abad7e41b  PIGLET-NOTES.md
 aed1315d7c100cf546a3a4f8775b2814  ROUND-NOTES.md
-d75a10890ce1967d615db98d11f0aaee  docs/HISTORY.md
+59c381072a6b02c979df12001f3cdffe  docs/HISTORY.md
 ec90d626c0f2e1d61b736a28f0eac7fb  docs/PLAN.md
 9a78609790994cf0a2ca6c236e907716  docs/README.md
 3af0c1629bcf3e486a1d839979525235  docs/RULES.index
-2dea4128bb316cec315740c54b9c66e2  docs/STATUS.html
+be9776441b416e4699a8f36329281b9f  docs/STATUS.html
 8ba7267f146bbc3aaf3527ef1595fb85  docs/amendments/A1.md
 15366d9641e55dfd225933c2cbb18bec  docs/amendments/A2.md
 ec6ff218f00b815397a0952e03f1c651  docs/amendments/A3.md
@@ -18,8 +18,8 @@ ec6ff218f00b815397a0952e03f1c651  docs/amendments/A3.md
 4d98b26aeaf637bdf433f702925f2e01  docs/amendments/A5.md
 7d1fb2e98c82ebbb33ae86a74ef08f65  docs/amendments/README.md
 ae64daeee6b2fc59732abe2d3c2ab803  docs/manifest/01-main-goal.md
-5fb040374a790c2c12788a1d7ce664b3  docs/manifest/02-current-focus.md
-7906cc7b55cf20bc86fbef421662c115  docs/manifest/03-roadmap.md
+27e3209995b87774f0d81a164cef7df7  docs/manifest/02-current-focus.md
+fda84a209e7eab1d880f7ef2266d029c  docs/manifest/03-roadmap.md
 85d664ab22e0d0329bba490dd20d42b5  docs/manifest/04-build-log.md
 6c729f618de95727998848af4531532d  docs/manifest/05-decisions.md
 680f86e45930e3f6aec31e60989a977f  docs/manifest/06-problems-and-fixes.md
@@ -27,7 +27,7 @@ ae64daeee6b2fc59732abe2d3c2ab803  docs/manifest/01-main-goal.md
 b0dd0f7c5188505b0f9f179eceedd5b7  docs/manifest/08-resources.md
 9276d8ef9d37e589af57f835a9e2ebb4  docs/manifest/09-ps4-knowledge-base.md
 99790d36af2c962878789f7abab2b097  docs/manifest/10-open-questions.md
-0e6f2d700fdd2f304aaf64b26014e8cb  docs/manifest/11-next-steps.md
+844a8eba9679a69b59a7164230363d12  docs/manifest/11-next-steps.md
 43e3563aadd40cc918b4474e16a90a54  docs/manifest/12-ps4-development-standard-merged-2026-11-24.md
 342a5a29415209e5573003c47dfbd4e7  docs/manifest/README.md
 86aa54bcb0d42596a5c9cbaf669fd115  docs/rules/G1.md
