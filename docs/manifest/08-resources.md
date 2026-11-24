@@ -48,13 +48,8 @@ re-verified this session, and no version claims are made where none is known.
 | Console run of `Piglet-GPU-Test-BREW00093-logged-v3.pkg`, 2026-11-23 | **the primary evidence on the module and GL questions** — it supersedes every snippet in this table on those two points, for 12.52 with GoldHEN v2.4b18.14 only | `piglet-gpu-test-v3.log`, 8,343 bytes, pulled over FTP 2026-11-23 |
 | Piglet extension and limit strings | what a render target may be, without creating one: float textures yes, half-float render targets yes, full-float render targets and float blending no, framebuffer fetch no | printed by the v3 package itself; driver strings are the console's, not documentation |
 
-### Who has already solved what (2026-11-24)
+### Who has already solved what (moved)
 
-Look for the existing answer first (R25, R26); findings, not code, in
-**`PIGLET-NOTES.md`**. `alechurri/shipofharkinian-ps4` `docs/TECHNICAL.md` is the
-best public Piglet write-up (`eglSwapInterval` trap, ~768/255 MiB memory,
-110-260 ms shader compiles, no `glBlitFramebuffer`, `struct stat` bug, `EINVAL`
-paths); `Navinas3460/Stremio-PS4` is a video app on this stack; `shadPS4` has the
-display contract; the ES2 spec has the uniform rule A5 cost two runs to learn.
+Verbatim in **`../HISTORY.md`**; the facts are in `PIGLET-NOTES.md`.
 
 [Manifest index](README.md) · [Back to the index](../README.md)

@@ -145,4 +145,20 @@ G2 crash and hang runbook, G3 fixed benchmark, G4 input latency, G5 thermals, G6
 `config.ini` migration, G7 clean-room note, G8 "professional" defined, G9 size
 ceilings, G10 a new project gets its own file.
 
+## Declared absent from this copy
+
+Quoted in this file, present in neither the working tree nor the publish output; recorded
+so the R35 check does not read them as broken (R38).
+
+- `CHANGELOG.md`
+- `Loader_Logs.txt`
+- `nv12.h`
+- `docs/ROOT-POINTER.md`
+- `docs/TECHNICAL.md`
+- `Piglet-GPU-Test-BREW00093-logged-v3.pkg`
+- `files/GPU-Bloom-Slope-Probe-BREW00103.pkg`
+- `files/Ultimate-Media-Player-v118.pkg`
+- `files/bootstrap-toolchain.sh`
+- `files/round7/README.md`
+
 [Manifest index](README.md) · [Back to the index](../README.md)

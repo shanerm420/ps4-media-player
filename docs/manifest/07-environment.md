@@ -130,7 +130,7 @@ Four programs keep these files honest, and none of them writes prose:
 - `tools/status.py` — `make status` writes `files/STATUS.html`, the one screen
   that answers healthy / where we are / what waits on the console. Generated,
   never hand-edited; `make check` fails when it is older than the rules files.
-- `_scratch/linttest/mutate.py` — breaks one thing at a time and proves each
+- `test/mutate.py` — breaks one thing at a time and proves each
   checker notices it: 12 of 12, including that the build stamp does not read the
   clock.
 
