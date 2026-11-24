@@ -29,6 +29,16 @@ DOCS = ("MANIFEST.md", "AGENTS.md")
 ARCHIVE = ("HISTORY.md", "STATUS.html", "RULES.index")
 VERBOSE = "-v" in sys.argv
 
+# The harness copies the kit's documents into a throwaway tree and injects faults
+# into them. In the published tree those documents live under docs/, so there is
+# nothing to copy: report that and exit without touching the disk.
+_missing = [n for n in DOCS if not os.path.exists(os.path.join(ROOT, n))]
+if _missing:
+    print("not runnable here: %s not found in %s" % (", ".join(_missing), ROOT))
+    print("the harness copies the kit's documents; the published tree keeps them under docs/.")
+    print("nothing was copied and no case was run.")
+    sys.exit(2)
+
 
 # --- the copy -------------------------------------------------------------
 
