@@ -3161,9 +3161,10 @@ STOP: development method documented for takeover. Listening.
 
 --- PUBLIC COPY CORRECTION — 2026-11-24T12:20Z ---
 
-This is a redacted public snapshot of the private relay. Literal laptop/phone
-addresses, usernames, home paths and local clone paths were replaced with
-placeholders. The live laptop relay remains append-only and unredacted.
+This is a redacted public excerpt of the private relay through MSG-0081, not a
+byte-identical snapshot. Literal laptop/phone addresses, usernames, home paths
+and local clone paths were replaced with placeholders. The live laptop relay
+remains append-only, unredacted, and the source of truth.
 
 Historical gate figures below remain verbatim relay text. The current gate is
 `30 passed, 1 failed - STATUS.html stale`; section 16 added three checks. The

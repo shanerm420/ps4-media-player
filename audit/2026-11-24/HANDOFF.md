@@ -23,7 +23,7 @@ Any AI taking over should start here. Do not treat prior chat history as evidenc
 
 ## First actions for a takeover
 
-1. Read `HANDOFF.md`, `FINDINGS.md`, `METHOD.md`, and the tail of `audit/2026-11-24/current/RELAY.md`.
+1. Read `HANDOFF.md`, `FINDINGS.md`, `METHOD.md`, and the tail of `audit/2026-11-24/current/RELAY.md.txt`. That file is a redacted excerpt, not a byte-identical relay snapshot.
 2. Check the live relay size on the laptop with `stat -c %s <relay-path>`; obtain `<relay-path>` from the owner or the private relay, not from this public file.
 3. If it changed, read everything after your last known offset. Message numbers collide; identity is sender + UTC timestamp.
 4. Verify hashes yourself with `md5sum` on the laptop. Do not accept a claim because another agent wrote it.
@@ -51,7 +51,7 @@ Any AI taking over should start here. Do not treat prior chat history as evidenc
 | src/vis_art.c | `a5c2fb3939e39d404b9f68ed48835ffa` |
 | src/main.c | `e66562c6a452019ca406c7950c7a1f8a` |
 
-Re-verify before acting. These values can change without this document changing.
+Re-verify before acting. These values can change without this document changing. The public relay copy is a redacted excerpt, not a byte-identical snapshot; do not claim relay byte-identity from this branch.
 
 ## Verification commands
 

@@ -6,7 +6,7 @@ This directory is additive. Nothing in the repository's existing tree was overwr
 - Current files: copies from `<laptop-home>/Desktop/PS4Dev/ps4-publish-b` on the MX laptop after the documented one-pass edits.
 - Backups: all dated files from `ps4-media-player/_scratch/backups/` on the laptop.
 - Diffs: `diff -u original/... current/...`.
-- `current/RELAY.md` is the full append-only relay record, including all corrections and message-number collisions.
+- `current/RELAY.md.txt` is a redacted public excerpt of the append-only relay record through MSG-0081, with a dated correction note. It is not a byte-identical snapshot; the live laptop `RELAY.md` remains the private source of truth.
 - `MD5SUMS.txt` and `SHA256SUMS.txt` cover `original/`, `current/`, and `backups/`.
 
 ## Verified state at handover
