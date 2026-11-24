@@ -270,6 +270,13 @@ try:
     check("RULES.index parses", True)
 except (OSError, ValueError, KeyError) as _exc:
     check("RULES.index parses", False, str(_exc))
+# A skipped rule is not a passing rule. With no usable index R33 and R34 cannot
+# run at all, and silence there is how a published tree reads as clean while the
+# two rules that police the index are absent. Name the failure instead (R35: a
+# judgement the checker cannot make is never reported as a pass).
+if not _idx:
+    check("RULES.index is present and non-empty for R33/R34", False,
+          "no index at %s - R33 and R34 were not run" % _rp)
 if _idx:
     _want = set(re.findall(r"(?m)^\| (R\d+) \|", man))
     _want |= set(re.findall(r"(?m)^\*\*(G\d+)\b", agents))
