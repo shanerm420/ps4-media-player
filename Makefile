@@ -8,19 +8,11 @@
 
 TITLE       := Ultimate PS4 Media Player
 VERSION     := 1.00
-# The PS4 enforces both the Content ID length and the shape of the title ID
-# inside it: 6 + 1 + 12 + 1 + 16 = 36 characters, where the middle 12 are the
-# 9-character TITLE_ID plus "_00".
-#
-# A TITLE_ID is four letters followed by five decimal digits (BREW00084,
-# AZIF00001). Putting letters after the fourth character - BREWMEDI1, say -
-# still gives a 36-character Content ID, so PkgTool builds the package happily,
-# and then the console refuses to install it with
-#   CE-32957-6  SCE_BGFT_ERROR_INVALID_CONTENTID
-# which is what the first v1.00 build did. PkgTool only checks the length; the
-# title ID format is checked by the console at install time.
+# The PS4 enforces the Content ID length: 6 + 1 + 12 + 1 + 16 = 36 characters,
+# where the middle 12 are the 9-character TITLE_ID plus "_00". PkgTool aborts
+# with "Content ID must be 36 characters long" otherwise.
 TITLE_ID    := BREM00001
-CONTENT_ID  := IV0000-BREM00001_00-ULTIMATEMEDIA000
+CONTENT_ID  := ED1234-BREM00001_00-0000000000000000
 
 # -lSceAudioOut for playback, -lSceUserService for the initial user,
 # -lSDL2 for window/renderer/controller. -lm only if your toolchain ships
@@ -31,7 +23,8 @@ CONTENT_ID  := IV0000-BREM00001_00-ULTIMATEMEDIA000
 LIBS        := -lc -lkernel -lc++ \
                -lSDL2 -lSceVideoOut -lSceCommonDialog \
                -lSceUserService -lSceAudioOut -lScePad -lSceSysmodule \
-               -lSceAvPlayer -lm
+               -lSceSystemService -lSceGnmDriver -lSceAvPlayer \
+               -lSceNetCtl -lm
 
 TOOLCHAIN   := $(OO_PS4_TOOLCHAIN)
 
@@ -61,8 +54,10 @@ DEPS        := $(OBJS:.o=.d)
 # clone builds immediately with the pixel font and switches to Inter as soon
 # as the header exists.
 FONTFLAG    := $(if $(wildcard src/font_inter.h),-DUI_FONT_ATLAS)
+# Fixed build stamp, so identical source gives an identical package (tools/buildstamp.py).
+BUILDSTAMP  := $(shell python3 tools/buildstamp.py)
 CFLAGS      := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -O2 \
-               -Wall -Wextra -c -Isrc -Ithird_party $(FONTFLAG) \
+               -Wall -Wextra -c -Isrc -Ithird_party $(FONTFLAG) $(BUILDSTAMP) \
                -isysroot $(TOOLCHAIN) -isystem $(TOOLCHAIN)/include
 LDFLAGS     := -m elf_x86_64 -pie --script $(TOOLCHAIN)/link.x --eh-frame-hdr \
                -L$(TOOLCHAIN)/lib $(LIBS) $(TOOLCHAIN)/lib/crt1.o
@@ -79,7 +74,7 @@ ifeq ($(UNAME_S),Darwin)
   CDIR := macos
 endif
 
-.PHONY: all clean check deps
+.PHONY: all clean check deps status
 all: $(CONTENT_ID).pkg
 
 # Fetches third_party/minimp3.h and generates src/font_inter.h (pinned).
@@ -101,7 +96,10 @@ sce_sys/param.sfo:
 	$(PKG) sfo_new $@
 	$(PKG) sfo_setentry $@ APP_TYPE --type Integer --maxsize 4 --value 1
 	$(PKG) sfo_setentry $@ APP_VER --type Utf8 --maxsize 8 --value '$(VERSION)'
-	$(PKG) sfo_setentry $@ ATTRIBUTE --type Integer --maxsize 4 --value 0
+	$(PKG) sfo_setentry $@ ATTRIBUTE --type Integer --maxsize 4 --value 2
+	$(PKG) sfo_setentry $@ ATTRIBUTE2 --type Integer --maxsize 4 --value 0
+	$(PKG) sfo_setentry $@ DEV_FLAG --type Integer --maxsize 4 --value 0
+	$(PKG) sfo_setentry $@ PARENTAL_LEVEL --type Integer --maxsize 4 --value 1
 	$(PKG) sfo_setentry $@ CATEGORY --type Utf8 --maxsize 4 --value 'gd'
 	$(PKG) sfo_setentry $@ CONTENT_ID --type Utf8 --maxsize 48 --value '$(CONTENT_ID)'
 	$(PKG) sfo_setentry $@ DOWNLOAD_DATA_SIZE --type Integer --maxsize 4 --value 0
@@ -120,8 +118,17 @@ $(INTDIR)/%.o: %.c
 	$(CC) $(CFLAGS) -MMD -MP $< -o $@
 
 # Host-side test of the platform-independent audio path. No PS4 needed.
+# Also lints the two rules files: section order, rule ids, cross references,
+# superseded tags without an amendment, unknown MD5s, the AGENTS.md ceiling.
 check:
 	$(MAKE) -C test run
+	python3 tools/check-manifest.py
+	python3 tools/rule-index.py
+
+# The status board: runs the checks again and rewrites files/STATUS.html.
+# Not part of `check`, because it calls `check` to fill its own rows.
+status:
+	python3 tools/status.py
 
 clean:
 	rm -rf $(INTDIR) eboot.bin pkg.gp4 sce_sys *.pkg

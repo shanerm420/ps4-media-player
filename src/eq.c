@@ -72,6 +72,11 @@ void eq_set_band_db(Eq *eq, int band, float db)
 {
     if (band < 0 || band >= EQ_BANDS)
         return;
+    /* Same ceiling as the preamp: a band left unlimited would run the biquad
+     * into values no 16-bit output can carry, so it saturates into clipping
+     * instead of getting louder. */
+    if (db > EQ_MAX_DB)  db = EQ_MAX_DB;
+    if (db < -EQ_MAX_DB) db = -EQ_MAX_DB;
     eq->gain_db[band] = db;
     eq_recompute(eq, band);
 }
@@ -156,4 +161,61 @@ void eq_preset_vocal(float *g)
     int b;
     for (b = 0; b < EQ_BANDS; b++)
         g[b] = p[b];
+}
+
+/* Seven curves plus CUSTOM. Each one is a shape, not a preference: the bass
+ * and loudness curves lift the low end and cut the preamp so they cannot
+ * clip, the vocal curve scoops the mud out of the middle. */
+static const struct {
+    const char *name;
+    float       gain[EQ_BANDS];
+    float       preamp;
+} k_presets[EQ_PRESET_CUSTOM] = {
+    { "FLAT",       { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0 },  0.0f },
+    { "BASS BOOST", { 8,  7,  5,  3,  1,  0,  0,  1,  2,  2 }, -2.0f },
+    { "VOCAL",      { -3, -2,  0,  3,  5,  5,  3,  1,  0, -1 },  0.0f },
+    { "ROCK",       { 5,  4,  3,  1, -1, -1,  1,  2,  3,  4 }, -2.0f },
+    { "POP",        { -2, -1,  0,  2,  4,  4,  2,  0, -1, -2 }, -1.0f },
+    { "JAZZ",       { 4,  3,  2,  1,  0,  0,  1,  2,  3,  4 }, -2.0f },
+    { "LOUDNESS",   { 7,  6,  4,  0, -2, -1,  2,  4,  5,  6 }, -3.0f },
+};
+
+const char *eq_preset_name(int preset)
+{
+    if (preset < 0 || preset >= EQ_PRESET_COUNT)
+        return "FLAT";
+    if (preset == EQ_PRESET_CUSTOM)
+        return "CUSTOM";
+    return k_presets[preset].name;
+}
+
+void eq_preset_apply(Eq *eq, int preset)
+{
+    int b;
+
+    if (!eq || preset < 0 || preset >= EQ_PRESET_CUSTOM)
+        return;                       /* CUSTOM keeps the user's own curve */
+    for (b = 0; b < EQ_BANDS; b++)
+        eq_set_band_db(eq, b, k_presets[preset].gain[b]);
+    eq_set_preamp_db(eq, k_presets[preset].preamp);
+}
+
+int eq_preset_match(const Eq *eq)
+{
+    int p, b;
+
+    if (!eq)
+        return EQ_PRESET_CUSTOM;
+    for (p = 0; p < EQ_PRESET_CUSTOM; p++) {
+        int same = 1;
+
+        for (b = 0; b < EQ_BANDS; b++)
+            if (fabsf(eq->gain_db[b] - k_presets[p].gain[b]) > 0.01f) {
+                same = 0;
+                break;
+            }
+        if (same && fabsf(eq->preamp_db - k_presets[p].preamp) <= 0.01f)
+            return p;
+    }
+    return EQ_PRESET_CUSTOM;
 }

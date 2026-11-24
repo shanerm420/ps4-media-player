@@ -7,7 +7,16 @@
  *   - two columns plus a footer, so the track list keeps a fixed width.
  */
 #include "ui.h"
-#include "ps4logo.h"
+#include "emblem.h"
+#include "emblem_img.h"
+#include "vis_art.h"
+
+/* stb_image lives in picture.c; the header art is decoded with the same code */
+extern unsigned char *stbi_load_from_memory(const unsigned char *buffer, int len,
+                                            int *x, int *y, int *channels, int desired);
+
+/* Boot log, for the once-per-geometry picture line. */
+extern void plog(const char *fmt, ...);
 
 #include <math.h>
 #include <stdio.h>
@@ -46,44 +55,123 @@ extern const unsigned char *media_font_char(unsigned char c);
 #define TYPE_TITLE   40
 #define TYPE_HERO    54
 
-/* palette: tuple form for col(), _R/_G/_B for the text helpers */
-#define C_BG_TOP    18,  22,  34
-#define C_BG_BOT     8,  10,  16
-#define C_PANEL     22,  28,  42
-#define C_PANEL_HI  31,  40,  62
-#define C_LINE      44,  56,  82
-#define C_TEXT     232, 236, 246
-#define C_DIM      156, 160, 178
-#define C_FAINT    118, 130, 152
-#define C_ACCENT    77, 163, 255
-#define C_ACCENT2   64, 224, 208
-#define C_WARN     255, 186,  96
+/* palette: tuple form for col(), _R/_G/_B for the text helpers.
+ *
+ * The colours sit in a table instead of the preprocessor so skins can be
+ * swapped at runtime; the macros below keep every call site unchanged, and
+ * ORIGINAL is exactly the palette the player shipped with. */
+typedef struct {
+    int bg_top[3], bg_bot[3];
+    int panel[3], panel_hi[3], line[3], plate[3];
+    int text[3], dim[3], faint[3];
+    int accent[3], accent2[3], warn[3], ok[3];
+} UiTheme;
 
-/* channel forms, for helpers that take separate components */
-#define C_BG_TOP_R    18
-#define C_BG_TOP_G    22
-#define C_BG_TOP_B    34
-#define C_BG_BOT_R     8
-#define C_BG_BOT_G    10
-#define C_BG_BOT_B    16
-#define C_TEXT_R     232
-#define C_TEXT_G     236
-#define C_TEXT_B     246
-#define C_DIM_R      156
-#define C_DIM_G      160
-#define C_DIM_B      178
-#define C_FAINT_R    118
-#define C_FAINT_G    130
-#define C_FAINT_B    152
-#define C_ACCENT_R    77
-#define C_ACCENT_G   163
-#define C_ACCENT_B   255
-#define C_ACCENT2_R   64
-#define C_ACCENT2_G  224
-#define C_ACCENT2_B  208
-#define C_WARN_R     255
-#define C_WARN_G     186
-#define C_WARN_B      96
+static const UiTheme k_themes[] = {
+    {   /* ORIGINAL */
+        { 18,  22,  34 }, {  8,  10,  16 },
+        { 22,  28,  42 }, { 31,  40,  62 }, { 44,  56,  82 }, { 13,  17,  26 },
+        {232, 236, 246 }, {156, 160, 178 }, {118, 130, 152 },
+        { 77, 163, 255 }, { 64, 224, 208 }, {255, 186,  96 },
+        { 96, 230, 150 },
+    },
+    {   /* MIDNIGHT */
+        { 10,  14,  26 }, {  4,   6,  12 },
+        { 18,  22,  38 }, { 28,  34,  56 }, { 38,  46,  72 }, { 10,  13,  22 },
+        {226, 232, 246 }, {148, 158, 182 }, {106, 118, 144 },
+        {120, 146, 255 }, {126, 232, 240 }, {255, 190, 110 },
+        { 92, 226, 160 },
+    },
+    {   /* EMERALD */
+        { 12,  28,  24 }, {  6,  14,  12 },
+        { 18,  38,  32 }, { 26,  54,  46 }, { 40,  74,  64 }, { 11,  24,  20 },
+        {228, 244, 236 }, {150, 172, 162 }, {110, 132, 124 },
+        { 82, 220, 150 }, {140, 244, 204 }, {255, 206, 120 },
+        {120, 236, 160 },
+    },
+    {   /* SUNSET */
+        { 34,  20,  26 }, { 16,   8,  12 },
+        { 44,  26,  32 }, { 62,  36,  46 }, { 92,  56,  66 }, { 26,  14,  18 },
+        {248, 236, 232 }, {186, 158, 154 }, {148, 118, 116 },
+        {255, 138, 110 }, {255, 198, 122 }, {255, 224, 140 },
+        {160, 232, 140 },
+    },
+};
+
+static UiTheme s_th = {
+    { 18,  22,  34 }, {  8,  10,  16 },
+    { 22,  28,  42 }, { 31,  40,  62 }, { 44,  56,  82 }, { 13,  17,  26 },
+    {232, 236, 246 }, {156, 160, 178 }, {118, 130, 152 },
+    { 77, 163, 255 }, { 64, 224, 208 }, {255, 186,  96 },
+    { 96, 230, 150 },
+};
+
+static int s_theme_cur;      /* index of the live skin, for the baked background */
+
+int ui_theme_count(void)
+{
+    return (int)(sizeof(k_themes) / sizeof(k_themes[0]));
+}
+
+const char *ui_theme_name(int index)
+{
+    static const char *const names[] = { "ORIGINAL", "MIDNIGHT", "EMERALD", "SUNSET" };
+
+    if (index < 0 || index >= (int)(sizeof(names)/sizeof(names[0])))
+        index = 0;
+    return names[index];
+}
+
+void ui_theme_set(int index)
+{
+    if (index < 0 || index >= ui_theme_count())
+        index = 0;
+    s_th = k_themes[index];
+    s_theme_cur = index;
+}
+
+/* tuple + channel forms, both reading the live theme */
+#define C_BG_TOP    s_th.bg_top[0],  s_th.bg_top[1],  s_th.bg_top[2]
+#define C_BG_BOT    s_th.bg_bot[0],  s_th.bg_bot[1],  s_th.bg_bot[2]
+#define C_PANEL     s_th.panel[0],   s_th.panel[1],   s_th.panel[2]
+#define C_PANEL_HI  s_th.panel_hi[0],s_th.panel_hi[1],s_th.panel_hi[2]
+#define C_LINE      s_th.line[0],    s_th.line[1],    s_th.line[2]
+#define C_PLATE     s_th.plate[0],   s_th.plate[1],   s_th.plate[2]
+#define C_TEXT      s_th.text[0],    s_th.text[1],    s_th.text[2]
+#define C_DIM       s_th.dim[0],     s_th.dim[1],     s_th.dim[2]
+#define C_FAINT     s_th.faint[0],   s_th.faint[1],   s_th.faint[2]
+#define C_ACCENT    s_th.accent[0],  s_th.accent[1],  s_th.accent[2]
+#define C_ACCENT2   s_th.accent2[0], s_th.accent2[1], s_th.accent2[2]
+#define C_WARN      s_th.warn[0],    s_th.warn[1],    s_th.warn[2]
+#define C_OK        s_th.ok[0],      s_th.ok[1],      s_th.ok[2]
+
+#define C_BG_TOP_R   s_th.bg_top[0]
+#define C_BG_TOP_G   s_th.bg_top[1]
+#define C_BG_TOP_B   s_th.bg_top[2]
+#define C_BG_BOT_R   s_th.bg_bot[0]
+#define C_BG_BOT_G   s_th.bg_bot[1]
+#define C_BG_BOT_B   s_th.bg_bot[2]
+#define C_TEXT_R     s_th.text[0]
+#define C_TEXT_G     s_th.text[1]
+#define C_TEXT_B     s_th.text[2]
+#define C_DIM_R      s_th.dim[0]
+#define C_DIM_G      s_th.dim[1]
+#define C_DIM_B      s_th.dim[2]
+#define C_FAINT_R    s_th.faint[0]
+#define C_FAINT_G    s_th.faint[1]
+#define C_FAINT_B    s_th.faint[2]
+#define C_ACCENT_R   s_th.accent[0]
+#define C_ACCENT_G   s_th.accent[1]
+#define C_ACCENT_B   s_th.accent[2]
+#define C_ACCENT2_R  s_th.accent2[0]
+#define C_ACCENT2_G  s_th.accent2[1]
+#define C_ACCENT2_B  s_th.accent2[2]
+#define C_WARN_R     s_th.warn[0]
+#define C_WARN_G     s_th.warn[1]
+#define C_WARN_B     s_th.warn[2]
+#define C_OK_R       s_th.ok[0]
+#define C_OK_G       s_th.ok[1]
+#define C_OK_B       s_th.ok[2]
 
 static int    s_w = DESIGN_W;
 static int    s_h = DESIGN_H;
@@ -327,13 +415,14 @@ static void fmt_time(char *buf, size_t n, double sec)
  * arrow for the d-pad. Every hint row is laid out from the measured widths, so
  * adding one entry never overlaps the next. */
 
-#define HINT_RAD  22
-#define HINT_GAP  12
-#define HINT_SEP  34
+#define HINT_RAD   22
+#define HINT_SEP   40
+#define HINT_PAD    8      /* chip bottom edge to the top of its label */
 
 enum { BTN_CROSS, BTN_CIRCLE, BTN_SQUARE, BTN_TRIANGLE,
        BTN_UP, BTN_DOWN, BTN_LEFT, BTN_RIGHT,
-       BTN_L1, BTN_R1, BTN_SHARE };
+       BTN_L1, BTN_R1, BTN_L2, BTN_R2, BTN_L3, BTN_R3, BTN_RSTICK,
+       BTN_SHARE, BTN_OPTIONS };
 
 typedef struct {
     int         btn;      /* -1 = label only, no chip */
@@ -403,23 +492,92 @@ static void dtri(SDL_Renderer *r, int cx, int cy, int size, int dir)
     }
 }
 
-static void btn_chip(SDL_Renderer *r, int cx, int cy, int btn)
+/* Style A - polished blue steel: a chrome ring around a steel-blue face with
+ * an ice symbol on it. SDL here has no gradient fill, no shaders and no
+ * rotation, so a chip is built one horizontal row at a time: the rows are the
+ * gradient, and the gloss is mixed into the top of the face. */
+
+#define CHIP_ICE_R   226
+#define CHIP_ICE_G   240
+#define CHIP_ICE_B   255
+#define CHIP_DARK_R    8
+#define CHIP_DARK_G   14
+#define CHIP_DARK_B   22
+
+static void chip_mix(const double *pos, const int (*rgb)[3], int n, double t,
+                     int *cr, int *cg, int *cb)
 {
-    if (btn < 0)
-        return;
+    int i = 0;
 
-    col(r, 22, 28, 42);
-    ddisc(r, cx, cy, HINT_RAD);
-    col(r, 104, 118, 146);
-    dring(r, cx, cy, HINT_RAD, 2);
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+    while (i < n - 2 && t > pos[i + 1])
+        i++;
+    {
+        double span = pos[i + 1] - pos[i];
+        double k    = span > 0.0001 ? (t - pos[i]) / span : 0.0;
 
-    if (btn == BTN_L1 || btn == BTN_R1) {
-        text_center(r, cx, cy - 13, 2, btn == BTN_L1 ? "L1" : "R1",
-                    C_TEXT_R, C_TEXT_G, C_TEXT_B);
-        return;
+        *cr = (int)(rgb[i][0] + (rgb[i + 1][0] - rgb[i][0]) * k + 0.5);
+        *cg = (int)(rgb[i][1] + (rgb[i + 1][1] - rgb[i][1]) * k + 0.5);
+        *cb = (int)(rgb[i][2] + (rgb[i + 1][2] - rgb[i][2]) * k + 0.5);
     }
+}
 
-    col(r, C_TEXT);
+/* the chrome ring: bright at both ends, darker in the middle, the way a turned
+ * metal edge catches the light */
+static void chip_ring_row(double t, int *cr, int *cg, int *cb)
+{
+    static const double pos[6] = { 0.00, 0.22, 0.48, 0.62, 0.84, 1.00 };
+    static const int    rgb[6][3] = {
+        { 236, 245, 254 }, { 168, 181, 195 }, { 92, 104, 120 },
+        { 214, 227, 240 }, { 84, 96, 112 }, { 226, 237, 249 }
+    };
+
+    chip_mix(pos, rgb, 6, t, cr, cg, cb);
+}
+
+/* the steel face: light at the top edge, deep navy at the bottom, with the
+ * gloss lifting the upper third */
+static void chip_face_row(double t, int *cr, int *cg, int *cb)
+{
+    static const double pos[5] = { 0.00, 0.30, 0.60, 0.84, 1.00 };
+    static const int    rgb[5][3] = {
+        { 74, 126, 182 }, { 38, 78, 130 }, { 18, 40, 70 },
+        { 10, 22, 38 }, { 6, 12, 20 }
+    };
+
+    chip_mix(pos, rgb, 5, t, cr, cg, cb);
+    if (t < 0.34) {
+        double g = 0.26 * (1.0 - t / 0.34);
+
+        *cr = (int)(*cr + (255 - *cr) * g);
+        *cg = (int)(*cg + (255 - *cg) * g);
+        *cb = (int)(*cb + (255 - *cb) * g);
+    }
+}
+
+static void chip_disc(SDL_Renderer *r, int cx, int cy, int rad,
+                      void (*row)(double, int *, int *, int *))
+{
+    int y;
+
+    for (y = -rad; y <= rad; y++) {
+        int hw = (int)(sqrt((double)rad * (double)rad
+                            - (double)y * (double)y) + 0.5);
+        int cr, cg, cb;
+
+        if (hw <= 0)
+            continue;
+        row((double)(y + rad) / (2.0 * (double)rad), &cr, &cg, &cb);
+        col(r, cr, cg, cb);
+        rect(r, cx - hw, cy + y, 2 * hw, 1);
+    }
+}
+
+/* The mark itself, drawn in whatever color is current, so it can be stamped
+ * twice: once as its shadow and once in ice. */
+static void chip_mark(SDL_Renderer *r, int cx, int cy, int btn)
+{
     switch (btn) {
     case BTN_CROSS:
         dline(r, cx - 9, cy - 9, cx + 9, cy + 9, 3);
@@ -445,6 +603,17 @@ static void btn_chip(SDL_Renderer *r, int cx, int cy, int btn)
     case BTN_RIGHT:
         dtri(r, cx, cy, 17, btn);
         break;
+    case BTN_OPTIONS:
+        /* options mark: the three stacked bars of the button's icon */
+        rect(r, cx - 9, cy - 7, 18, 3);
+        rect(r, cx - 9, cy - 1, 18, 3);
+        rect(r, cx - 9, cy + 5, 18, 3);
+        break;
+    case BTN_RSTICK:
+        /* right stick: a ring with a dot, so "move the stick" reads */
+        dring(r, cx, cy, 10, 2);
+        ddisc(r, cx, cy, 4);
+        break;
     case BTN_SHARE:
         /* share mark: three nodes joined by two strokes */
         ddisc(r, cx - 9, cy - 8, 4);
@@ -458,6 +627,64 @@ static void btn_chip(SDL_Renderer *r, int cx, int cy, int btn)
     }
 }
 
+static void btn_chip(SDL_Renderer *r, int cx, int cy, int btn)
+{
+    const int outer = HINT_RAD;
+    const int face  = HINT_RAD - 5;      /* the chrome ring is 5 px wide */
+
+    if (btn < 0)
+        return;
+
+    /* a dark seat, so the chip sits on the panel instead of floating */
+    col(r, CHIP_DARK_R, CHIP_DARK_G, CHIP_DARK_B);
+    ddisc(r, cx, cy + 1, outer + 1);
+
+    chip_disc(r, cx, cy, outer, chip_ring_row);   /* chrome edge */
+    chip_disc(r, cx, cy, face, chip_face_row);    /* polished steel face */
+
+    if (btn == BTN_L1 || btn == BTN_R1 || btn == BTN_L2 || btn == BTN_R2 ||
+        btn == BTN_L3 || btn == BTN_R3) {
+        const char *name = btn == BTN_L1 ? "L1"
+                         : btn == BTN_R1 ? "R1"
+                         : btn == BTN_L2 ? "L2"
+                         : btn == BTN_R2 ? "R2"
+                         : btn == BTN_L3 ? "L3" : "R3";
+
+        text_center(r, cx, cy - 12, 2, name,
+                    CHIP_DARK_R, CHIP_DARK_G, CHIP_DARK_B);
+        text_center(r, cx, cy - 13, 2, name,
+                    CHIP_ICE_R, CHIP_ICE_G, CHIP_ICE_B);
+        return;
+    }
+
+    col(r, CHIP_DARK_R, CHIP_DARK_G, CHIP_DARK_B);
+    chip_mark(r, cx, cy + 1, btn);
+    col(r, CHIP_ICE_R, CHIP_ICE_G, CHIP_ICE_B);
+    chip_mark(r, cx, cy, btn);
+}
+
+/* Each entry is a small column: the emblem on top, what it does underneath,
+ * the two centred on each other. Reading down instead of across means a long
+ * label never pushes the next emblem away from its own word. */
+static int hint_w(const UiHint *h)
+{
+    int tw = h->label[0] ? text_width(h->label, 2) : 0;
+    int cw = h->btn >= 0 ? 2*HINT_RAD : 0;
+
+    return cw > tw ? cw : tw;
+}
+
+static void hint_draw(SDL_Renderer *r, int x, int y, const UiHint *h)
+{
+    int cx = x + hint_w(h)/2;
+
+    if (h->btn >= 0)
+        btn_chip(r, cx, y + HINT_RAD, h->btn);
+    if (h->label[0])
+        text_center(r, cx, y + (h->btn >= 0 ? 2*HINT_RAD + HINT_PAD : 0),
+                    2, h->label, C_FAINT);
+}
+
 static void hint_row(SDL_Renderer *r, int cx, int y, const UiHint *h, int n)
 {
     int total = 0, i, x;
@@ -465,22 +692,15 @@ static void hint_row(SDL_Renderer *r, int cx, int y, const UiHint *h, int n)
     for (i = 0; i < n; i++) {
         if (i)
             total += HINT_SEP;
-        if (h[i].btn >= 0)
-            total += 2*HINT_RAD + HINT_GAP;
-        total += text_width(h[i].label, 2);
+        total += hint_w(&h[i]);
     }
 
     x = cx - total/2;
     for (i = 0; i < n; i++) {
         if (i)
             x += HINT_SEP;
-        if (h[i].btn >= 0) {
-            btn_chip(r, x + HINT_RAD, y + HINT_RAD, h[i].btn);
-            x += 2*HINT_RAD + HINT_GAP;
-        }
-        if (h[i].label[0])
-            text_at(r, x, y + HINT_RAD - 9, 2, h[i].label, C_FAINT);
-        x += text_width(h[i].label, 2);
+        hint_draw(r, x, y, &h[i]);
+        x += hint_w(&h[i]);
     }
 }
 
@@ -491,28 +711,711 @@ static void hint_at(SDL_Renderer *r, int x, int y, const UiHint *h, int n)
     for (i = 0; i < n; i++) {
         if (i)
             x += HINT_SEP;
-        if (h[i].btn >= 0) {
-            btn_chip(r, x + HINT_RAD, y + HINT_RAD, h[i].btn);
-            x += 2*HINT_RAD + HINT_GAP;
-        }
-        if (h[i].label[0])
-            text_at(r, x, y + HINT_RAD - 9, 2, h[i].label, C_FAINT);
-        x += text_width(h[i].label, 2);
+        hint_draw(r, x, y, &h[i]);
+        x += hint_w(&h[i]);
     }
 }
 
 /* ------------------------------------------------------------ components -- */
 
+/* One smoke puff: nested ellipses of decreasing size and rising alpha, each
+ * built from horizontal strips. The stacking is what makes the edge soft - a
+ * single translucent rectangle shows its corners straight through the panels,
+ * which is exactly what the first attempt did. */
+static void smoke_puff(SDL_Renderer *r, int cx, int cy, int rx, int ry,
+                       int layers)
+{
+    int l, k;
+
+    for (l = 0; l < layers; l++) {
+        double f  = 1.0 - 0.22 * (double)l;
+        int    ex = (int)((double)rx * f);
+        int    ey = (int)((double)ry * f);
+
+        for (k = -ey; k < ey; k += 12) {
+            double u  = (double)k / (double)ey;
+            double c2 = 1.0 - u * u;
+            int    hw = (int)((double)ex * sqrt(c2 > 0.0 ? c2 : 0.0));
+
+            if (hw <= 0)
+                continue;
+            rect_a(r, cx - hw, cy + k, 2*hw, 12, 150, 178, 218, 5);
+        }
+    }
+}
+
+/* The room the whole player sits in: a cold key light above the frame, two
+ * volumetric shafts, drifting smoke and a vignette.
+ *
+ * It is baked into one 960x540 buffer and uploaded as a single texture. Drawn
+ * live it cost 325 ms a frame on the console - the perf log showed flush
+ * dominating the loop, because every puff and every strip of light was a
+ * blended rectangle over an already full-screen frame, six screens' worth per
+ * frame. One opaque blit replaced all of it, and the haze is baked per skin so
+ * a theme change rebuilds it once.
+ *
+ * ABGR8888 stores r,g,b,a in memory on a little-endian chip, and that is how
+ * the buffer is written: the first attempt used b,g,r,a and the background came
+ * out brown. */
+#define BGW 960
+#define BGH 540
+
+static SDL_Texture *s_bg_tex;
+static int          s_bg_theme = -1;
+static int          s_bg_w, s_bg_h;
+
+/* The baked room is the most expensive thing the player ever draws: four
+ * octaves of fractal noise over half a million pixels, then an upscale to the
+ * output. The console measured one bake at 438 ms, so a skin change used to
+ * freeze the home screen for half a second - the frame that rebuilt it did
+ * nothing else. A skin that has been built once is kept at the output size, so
+ * going back to it is a pointer swap instead of another bake. */
+#define BG_KEEP 3                       /* beside the live one: all four skins */
+static struct bg_baked { SDL_Texture *tex; int theme; } s_bg_keep[BG_KEEP];
+
+static void bg_keep_drop(void)
+{
+    int i;
+
+    for (i = 0; i < BG_KEEP; i++) {
+        if (s_bg_keep[i].tex)
+            SDL_DestroyTexture(s_bg_keep[i].tex);
+        s_bg_keep[i].tex   = NULL;
+        s_bg_keep[i].theme = -1;
+    }
+}
+
+/* Park the skin that is leaving the screen. The slot that goes is the oldest,
+ * so one trip through every theme leaves all of them ready. */
+static void bg_keep_park(void)
+{
+    int i, slot = -1;
+
+    if (!s_bg_tex || s_bg_theme < 0)
+        return;
+    for (i = 0; i < BG_KEEP; i++)
+        if (s_bg_keep[i].tex && s_bg_keep[i].theme == s_bg_theme)
+            return;                     /* already held */
+    for (i = 0; i < BG_KEEP; i++)
+        if (!s_bg_keep[i].tex) { slot = i; break; }
+    if (slot < 0) {
+        SDL_DestroyTexture(s_bg_keep[0].tex);
+        for (i = 1; i < BG_KEEP; i++)
+            s_bg_keep[i - 1] = s_bg_keep[i];
+        slot = BG_KEEP - 1;
+    }
+    s_bg_keep[slot].tex   = s_bg_tex;
+    s_bg_keep[slot].theme = s_bg_theme;
+    s_bg_tex   = NULL;                  /* the slot owns it now */
+    s_bg_theme = -1;
+}
+
+/* A parked skin, or NULL when it was never built at this size. */
+static SDL_Texture *bg_keep_take(int theme)
+{
+    int i;
+
+    for (i = 0; i < BG_KEEP; i++) {
+        if (s_bg_keep[i].tex && s_bg_keep[i].theme == theme) {
+            SDL_Texture *t = s_bg_keep[i].tex;
+
+            s_bg_keep[i].tex   = NULL;
+            s_bg_keep[i].theme = -1;
+            return t;
+        }
+    }
+    return NULL;
+}
+
+static void background_live(SDL_Renderer *r);
+
+static unsigned int bg_hash(int x, int y, int seed)
+{
+    unsigned int h = (unsigned int)x * 374761393u
+                   + (unsigned int)y * 668265263u
+                   + (unsigned int)seed * 2246822519u;
+
+    h = (h ^ (h >> 13)) * 1274126177u;
+    return h ^ (h >> 16);
+}
+
+static double bg_rand(int x, int y, int seed)
+{
+    return (double)(bg_hash(x, y, seed) & 0xFFFFFFu) / (double)0xFFFFFFu;
+}
+
+/* smooth value noise; the smoke must never look like blocks */
+static double bg_noise(double x, double y, int seed)
+{
+    int    xi = (int)floor(x), yi = (int)floor(y);
+    double fx = x - (double)xi, fy = y - (double)yi;
+    double u  = fx * fx * (3.0 - 2.0 * fx);
+    double v  = fy * fy * (3.0 - 2.0 * fy);
+    double a  = bg_rand(xi, yi, seed);
+    double b  = bg_rand(xi + 1, yi, seed);
+    double c  = bg_rand(xi, yi + 1, seed);
+    double d  = bg_rand(xi + 1, yi + 1, seed);
+    double ab = a + (b - a) * u;
+    double cd = c + (d - c) * u;
+
+    return ab + (cd - ab) * v;
+}
+
+static double bg_fbm(double x, double y, int seed, int oct)
+{
+    double sum = 0.0, amp = 0.5, f = 1.0;
+    int    i;
+
+    for (i = 0; i < oct; i++) {
+        sum += amp * bg_noise(x * f, y * f, seed + i * 17);
+        f   *= 2.03;
+        amp *= 0.5;
+    }
+    return sum;
+}
+
+/* Stretch the baked room to the renderer's own size, once.
+ *
+ * This is not an optimisation detail, it is the difference between a usable
+ * frame and a slideshow: on this renderer a SCALED blit of a full-screen
+ * texture measured ~45 ms, while an unscaled one is a row copy of a few
+ * milliseconds. A 960x540 background copied onto a 1920x1080 frame paid that
+ * 45 ms on every single frame - in the menu, over the video, everywhere - and
+ * that is what the perf log's flush=45..55 was. Upscaling it here costs the
+ * same 45 ms once. */
+/* Rows [y0, y1) of the upscale. Split out of bg_upload_native for the sliced
+ * build: the same rows, in any number of pieces. */
+static void bg_upscale_rows(unsigned char *big, const unsigned char *src,
+                            int W, int H, int y0, int y1)
+{
+    int x, y;
+
+    for (y = y0; y < y1; y++) {
+        int sy = y * BGH / H;
+        int fy = ((y * BGH) % H) * 256 / H;
+        const unsigned char *r0, *r1;
+        unsigned char *d = big + (size_t)y * (size_t)W * 4;
+
+        if (sy >= BGH - 1) {
+            sy = BGH - 1;
+            fy = 0;
+        }
+        r0 = src + (size_t)sy * BGW * 4;
+        /* The bottom row has no row under it. fy is zero there, so the value
+         * is never used - but the read still happened, one row past the end of
+         * the bake, and that is a buffer overrun rather than a style choice. */
+        r1 = (sy + 1 < BGH) ? r0 + (size_t)BGW * 4 : r0;
+
+        for (x = 0; x < W; x++) {
+            int sx = x * BGW / W;
+            int fx = ((x * BGW) % W) * 256 / W;
+            const unsigned char *a, *b, *c, *e;
+            int i;
+
+            if (sx >= BGW - 1) {
+                sx = BGW - 1;
+                fx = 0;
+            }
+            a = r0 + (size_t)sx * 4;
+            b = (sx + 1 < BGW) ? r0 + (size_t)(sx + 1) * 4 : a;
+            c = r1 + (size_t)sx * 4;
+            e = (sx + 1 < BGW) ? r1 + (size_t)(sx + 1) * 4 : c;
+            for (i = 0; i < 3; i++) {
+                int top = (int)a[i] + (((int)b[i] - (int)a[i]) * fx) / 256;
+                int bot = (int)c[i] + (((int)e[i] - (int)c[i]) * fx) / 256;
+
+                d[x * 4 + i] = (unsigned char)(top + ((bot - top) * fy) / 256);
+            }
+            d[x * 4 + 3] = 255;
+        }
+    }
+}
+
+/* The whole thing at once: the startup bake, where there is no picture on
+ * screen to keep while a new one is made. Skin changes use bg_job_step(). */
+static void bg_upload_native(SDL_Renderer *r, const unsigned char *src)
+{
+    int W = s_w > 0 ? s_w : DESIGN_W;
+    int H = s_h > 0 ? s_h : DESIGN_H;
+    unsigned char *big;
+
+    if (!s_bg_tex || s_bg_w != W || s_bg_h != H) {
+        if (s_bg_tex) {
+            SDL_DestroyTexture(s_bg_tex);
+            s_bg_tex = NULL;
+        }
+        s_bg_tex = SDL_CreateTexture(r, SDL_PIXELFORMAT_ABGR8888,
+                                     SDL_TEXTUREACCESS_STATIC, W, H);
+        s_bg_w = W;
+        s_bg_h = H;
+    }
+    if (!s_bg_tex)
+        return;
+
+    big = (unsigned char *)malloc((size_t)W * (size_t)H * 4);
+    if (!big)
+        return;
+
+    bg_upscale_rows(big, src, W, H, 0, H);
+    SDL_SetTextureBlendMode(s_bg_tex, SDL_BLENDMODE_NONE);
+    SDL_UpdateTexture(s_bg_tex, NULL, big, W * 4);
+    free(big);
+}
+
+/* The room the whole player sits in, baked once per skin.
+ *
+ * Baked, because drawing it live cost 325 ms of every frame on the console: a
+ * few hundred blended rectangles spread over an already full-screen frame. It
+ * now costs one blit, and because it is only built once the smoke can afford to
+ * be real smoke - fractal noise rising in slow curls - instead of stacked
+ * rectangles, and every gradient is computed per pixel so no banding shows.
+ *
+ * ABGR8888 stores r,g,b,a in memory on a little-endian chip. */
+/* Rows [y0, y1) of the room itself. Split out of bg_build so the same
+ * arithmetic can run a slice at a time: a build spread over thirty frames
+ * writes the pixels a build done in one frame writes. */
+static void bg_rows(unsigned char *px, int y0, int y1)
+{
+    int x, y;
+
+    for (y = y0; y < y1; y++) {
+        double uy = (double)y / (double)(BGH - 1);
+
+        for (x = 0; x < BGW; x++) {
+            double ux = (double)x / (double)BGW;
+            double cr = C_BG_TOP_R + (C_BG_BOT_R - C_BG_TOP_R) * uy;
+            double cg = C_BG_TOP_G + (C_BG_BOT_G - C_BG_TOP_G) * uy;
+            double cb = C_BG_TOP_B + (C_BG_BOT_B - C_BG_TOP_B) * uy;
+            double gx = (ux - 0.5) / 0.62;
+            double gy = (uy + 0.10) / 0.52;
+            double gd = gx * gx + gy * gy;
+            double t1, t2, ridge, pw, dens, a, vx, vy, vg;
+            unsigned char *q = px + ((size_t)y * BGW + x) * 4;
+
+            /* a cold wash from above the frame, tinted by the skin */
+            if (gd < 1.0) {
+                double k = 1.0 - gd;
+
+                k *= k * 0.30;
+                cr += ((double)C_ACCENT_R - cr) * k;
+                cg += ((double)C_ACCENT_G - cg) * k;
+                cb += ((double)C_ACCENT_B - cb) * k;
+            }
+
+            /* the smoke: ridged fractal noise pulled into long vertical
+             * filaments, so it rises in strands instead of sitting in clouds.
+             * It gathers low and thins upward, and goes cold green-teal where
+             * it is densest - the eerie part. */
+            t1   = bg_fbm(ux * 5.0, uy * 3.2 - 0.40, 61, 4);
+            t2   = bg_fbm(ux * 12.0 + 2.7, uy * 7.0, 131, 3);
+            ridge = 1.0 - fabs(2.0 * t1 - 1.0);
+            ridge *= ridge;
+            pw    = 0.30
+                  + 0.70 * exp(-pow((ux - 0.20) / 0.26, 2.0))
+                  + 0.55 * exp(-pow((ux - 0.80) / 0.24, 2.0));
+            if (pw > 1.0)
+                pw = 1.0;
+            dens = (ridge * 0.66 + t2 * 0.34) * pw;
+            a    = (dens - 0.34) * 2.6;
+            if (a < 0.0)
+                a = 0.0;
+            if (a > 1.0)
+                a = 1.0;
+            a *= a * (1.28 - 0.62 * uy);
+            if (a > 0.0) {
+                double m = (t2 - 0.40) * 1.8;
+                double sr, sg, sb;
+
+                if (m < 0.0)
+                    m = 0.0;
+                if (m > 1.0)
+                    m = 1.0;
+                sr = 152.0 - 106.0 * m;     /* pale ghost .. green-teal */
+                sg = 192.0 - 88.0 * m;
+                sb = 200.0 - 92.0 * m;
+                cr += (sr - cr) * a;
+                cg += (sg - cg) * a;
+                cb += (sb - cb) * a;
+            }
+
+            vx = fabs(ux * 2.0 - 1.0);
+            vy = fabs(uy * 2.0 - 1.0);
+            vg = 1.0 - (0.42 * vx * vx + 0.30 * vy * vy);
+            cr *= vg;
+            cg *= vg;
+            cb *= vg;
+
+            if (cr < 0.0) cr = 0.0;
+            if (cr > 255.0) cr = 255.0;
+            if (cg < 0.0) cg = 0.0;
+            if (cg > 255.0) cg = 255.0;
+            if (cb < 0.0) cb = 0.0;
+            if (cb > 255.0) cb = 255.0;
+
+            q[0] = (unsigned char)cr;
+            q[1] = (unsigned char)cg;
+            q[2] = (unsigned char)cb;
+            q[3] = 255;
+        }
+    }
+}
+
+static void bg_build(SDL_Renderer *r)
+{
+    unsigned char *px = (unsigned char *)malloc((size_t)BGW * BGH * 4);
+
+    if (!px)
+        return;
+
+    bg_rows(px, 0, BGH);
+    bg_upload_native(r, px);
+    if (!s_bg_tex)
+        plog("ui: baked background unavailable, drawing it live");
+    free(px);
+}
+
+/* ---- the room, built a slice at a time ----------------------------------
+ *
+ * One bake costs 435 ms on the console. Fine at startup, where the first frame
+ * stalls anyway, and fatal on a key press: SQUARE on the home screen changes
+ * the skin, and the frame that rebuilt the room did nothing else, so the screen
+ * froze for 467 ms - three sessions running, in the logs at 7.4 s and 8.1 s.
+ *
+ * The room a skin change replaces now stays on screen while the new one is
+ * made: a slice of rows per frame, then the upscale in slices, then one upload.
+ * The new room appears a second late; nothing stops answering, and no frame
+ * pays more than BG_JOB_MS for it. */
+#ifndef BG_JOB_MS
+#define BG_JOB_MS      12       /* per frame, sampling and upscale together */
+#endif
+#define BG_JOB_ROWS    6        /* rows per sampling slice, checked against
+                                 * the clock after each one */
+#define BG_JOB_UP_ROWS 40       /* rows per upscale slice */
+
+static struct {
+    unsigned char *px;          /* the small image, BGW x BGH x 4 */
+    unsigned char *big;         /* the upscale, w x h x 4 */
+    int            w, h;        /* output size this job was started at */
+    int            theme;
+    int            row, urow;
+    int            active;
+} s_bgj = { NULL, NULL, 0, 0, -1, 0, 0, 0 };
+
+static void bg_job_abort(void)
+{
+    free(s_bgj.px);
+    free(s_bgj.big);
+    s_bgj.px   = s_bgj.big = NULL;
+    s_bgj.row  = s_bgj.urow = 0;
+    s_bgj.theme  = -1;
+    s_bgj.active = 0;
+}
+
+static void bg_job_begin(int theme)
+{
+    int W = s_w > 0 ? s_w : DESIGN_W;
+    int H = s_h > 0 ? s_h : DESIGN_H;
+
+    bg_job_abort();
+    s_bgj.px  = (unsigned char *)malloc((size_t)BGW * BGH * 4);
+    s_bgj.big = (unsigned char *)malloc((size_t)W * (size_t)H * 4);
+    if (!s_bgj.px || !s_bgj.big) {
+        bg_job_abort();
+        return;
+    }
+    s_bgj.w      = W;
+    s_bgj.h      = H;
+    s_bgj.theme  = theme;
+    s_bgj.active = 1;
+}
+
+/* One frame's worth of building. The skin on screen is untouched until this is
+ * done, so the caller can keep drawing it. Returns 1 once the new room is up. */
+static int bg_job_step(SDL_Renderer *r)
+{
+    Uint32 t0 = SDL_GetTicks();
+    SDL_Texture *t;
+
+    if (!s_bgj.active)
+        return 0;
+
+    while (s_bgj.row < BGH) {
+        int n = s_bgj.row + BG_JOB_ROWS;
+
+        if (n > BGH)
+            n = BGH;
+        bg_rows(s_bgj.px, s_bgj.row, n);
+        s_bgj.row = n;
+        if (SDL_GetTicks() - t0 >= BG_JOB_MS)
+            return 0;
+    }
+    while (s_bgj.urow < s_bgj.h) {
+        int n = s_bgj.urow + BG_JOB_UP_ROWS;
+
+        if (n > s_bgj.h)
+            n = s_bgj.h;
+        bg_upscale_rows(s_bgj.big, s_bgj.px, s_bgj.w, s_bgj.h,
+                        s_bgj.urow, n);
+        s_bgj.urow = n;
+        if (SDL_GetTicks() - t0 >= BG_JOB_MS)
+            return 0;
+    }
+
+    /* One upload, 8 MB: tens of milliseconds, once. */
+    t = SDL_CreateTexture(r, SDL_PIXELFORMAT_ABGR8888,
+                          SDL_TEXTUREACCESS_STATIC, s_bgj.w, s_bgj.h);
+    if (t) {
+        SDL_SetTextureBlendMode(t, SDL_BLENDMODE_NONE);
+        SDL_UpdateTexture(t, NULL, s_bgj.big, s_bgj.w * 4);
+        bg_keep_park();             /* the skin leaving the screen */
+        s_bg_tex   = t;
+        s_bg_w     = s_bgj.w;
+        s_bg_h     = s_bgj.h;
+        s_bg_theme = s_bgj.theme;
+    } else {
+        /* No memory for it: keep the picture that is up rather than retrying
+         * the same build forever. */
+        s_bg_theme = s_bgj.theme;
+        plog("ui: skin background could not be created, keeping the last one");
+    }
+    bg_job_abort();
+    return 1;
+}
+
+/* ---- what the background does not have to paint --------------------------
+ *
+ * Every screen lays the baked room down first and then covers most of it with
+ * opaque panels. An opaque fill costs as much as a copy here, so the room
+ * under a panel is pixels written twice for nothing. These holes are the
+ * insides of the panels: a panel's corners are rounded by its radius, so the
+ * hole is inset by the same radius and the room is still laid down in the
+ * corner notches. The hole is measured with the same px()/py() rounding the
+ * panel itself uses, so it never reaches past the opaque paint. */
+#define BG_MAX_HOLES 4
+static struct bg_hole { int x, y, w, h; } s_bg_hole[BG_MAX_HOLES];
+static int s_bg_holes;
+
+static void bg_hole(int x, int y, int w, int h, int radius)
+{
+    struct bg_hole *g;
+
+    if (s_bg_holes >= BG_MAX_HOLES)
+        return;
+    g = &s_bg_hole[s_bg_holes];
+    /* exactly the rectangle round_rect() paints over with no corner: the middle
+     * strip widened by the two side strips */
+    g->x = px(x + radius);
+    g->y = py(y + radius);
+    g->w = px(w - 2*radius);
+    g->h = py(h - 2*radius);
+    if (g->w <= 0 || g->h <= 0)
+        return;
+    s_bg_holes++;
+}
+
+/* The baked room, in 1:1 pieces. Source and destination are the same
+ * rectangle so this stays the unscaled row copy; a scaled blit is the 45 ms
+ * path and must never be reached from here. */
+static void bg_piece(SDL_Renderer *r, int x, int y, int w, int h)
+{
+    SDL_Rect q;
+
+    if (w <= 0 || h <= 0)
+        return;
+    q.x = x; q.y = y; q.w = w; q.h = h;
+    SDL_RenderCopy(r, s_bg_tex, &q, &q);
+}
+
+static void bg_cover(SDL_Renderer *r)
+{
+    int edge[2*BG_MAX_HOLES + 2];
+    int ne = 0, i, j;
+
+    if (s_bg_holes <= 0) {
+        SDL_RenderCopy(r, s_bg_tex, NULL, NULL);
+        return;
+    }
+
+    /* horizontal bands split at the holes' top and bottom edges; in each band
+     * the room is painted in the columns the holes leave free */
+    edge[ne++] = 0;
+    edge[ne++] = s_h;
+    for (i = 0; i < s_bg_holes; i++) {
+        int y0 = s_bg_hole[i].y;
+        int y1 = s_bg_hole[i].y + s_bg_hole[i].h;
+
+        if (y0 > 0 && y0 < s_h) edge[ne++] = y0;
+        if (y1 > 0 && y1 < s_h) edge[ne++] = y1;
+    }
+    for (i = 1; i < ne; i++) {          /* a handful of edges: insert sort */
+        int v = edge[i];
+
+        for (j = i - 1; j >= 0 && edge[j] > v; j--)
+            edge[j + 1] = edge[j];
+        edge[j + 1] = v;
+    }
+
+    for (i = 0; i + 1 < ne; i++) {
+        int a = edge[i], b = edge[i + 1];
+        int cov[BG_MAX_HOLES][2], nc = 0, cur = 0;
+
+        if (b <= a)
+            continue;
+        for (j = 0; j < s_bg_holes; j++) {
+            int y0 = s_bg_hole[j].y;
+            int y1 = s_bg_hole[j].y + s_bg_hole[j].h;
+            int x0, x1;
+
+            if (y0 > a || y1 < b)
+                continue;               /* this hole is not in this band */
+            x0 = s_bg_hole[j].x;
+            x1 = s_bg_hole[j].x + s_bg_hole[j].w;
+            if (x0 < 0) x0 = 0;
+            if (x1 > s_w) x1 = s_w;
+            if (x0 >= x1)
+                continue;
+            cov[nc][0] = x0;
+            cov[nc][1] = x1;
+            nc++;
+        }
+        for (j = 1; j < nc; j++) {      /* by left edge, then merge on the fly */
+            int c0 = cov[j][0], c1 = cov[j][1];
+            int k;
+
+            for (k = j - 1; k >= 0 && cov[k][0] > c0; k--) {
+                cov[k + 1][0] = cov[k][0];
+                cov[k + 1][1] = cov[k][1];
+            }
+            cov[k + 1][0] = c0;
+            cov[k + 1][1] = c1;
+        }
+        for (j = 0; j < nc; j++) {
+            if (cov[j][0] > cur)
+                bg_piece(r, cur, a, cov[j][0] - cur, b - a);
+            if (cov[j][1] > cur)
+                cur = cov[j][1];
+        }
+        if (cur < s_w)
+            bg_piece(r, cur, a, s_w - cur, b - a);
+    }
+}
+
 static void background(SDL_Renderer *r)
 {
-    int i, steps = 28;
+    const int W = s_w > 0 ? s_w : DESIGN_W;
+    const int H = s_h > 0 ? s_h : DESIGN_H;
+
+    /* a resolution change makes every baked texture the wrong size, and a blit
+     * that has to scale is the expensive path again - rebuild once */
+    if (s_bg_w != W || s_bg_h != H) {
+        if (s_bg_tex)
+            SDL_DestroyTexture(s_bg_tex);
+        s_bg_tex   = NULL;
+        s_bg_theme = -1;
+        s_bg_w     = 0;
+        s_bg_h     = 0;
+        bg_job_abort();
+        bg_keep_drop();
+    }
+
+    /* A room being built a slice at a time. The skin it replaces stays on
+     * screen until the new one is complete, so a skin change costs a few
+     * milliseconds a frame instead of one frozen second. */
+    if (s_bgj.active) {
+        if (s_bgj.w != W || s_bgj.h != H || s_bgj.theme != s_theme_cur) {
+            bg_job_abort();             /* the newest change wins */
+        } else {
+            bg_job_step(r);
+            if (s_bg_tex) {
+                bg_cover(r);
+                return;
+            }
+        }
+    }
+
+    if (s_bg_theme != s_theme_cur || !s_bg_tex) {
+        SDL_Texture *kept = bg_keep_take(s_theme_cur);
+
+        if (kept) {
+            bg_keep_park();             /* the skin leaving the screen */
+            s_bg_tex   = kept;          /* built earlier: no bake, no freeze */
+            s_bg_theme = s_theme_cur;
+        } else if (s_bg_tex && s_bg_w == W && s_bg_h == H) {
+            bg_job_begin(s_theme_cur);  /* over the next frames, starting now */
+            bg_job_step(r);
+        } else {
+            bg_keep_park();
+            bg_build(r);                /* sets s_bg_tex, s_bg_w and s_bg_h */
+            s_bg_theme = s_theme_cur;
+        }
+    }
+    if (s_bg_tex) {
+        bg_cover(r);
+        return;
+    }
+    background_live(r);
+}
+
+/* The same room, drawn live. Kept only as a fallback for the case where the
+ * baked texture cannot be created. */
+static void background_live(SDL_Renderer *r)
+{
+    int    i, steps = 28;
+    double t = (double)SDL_GetTicks() / 1000.0;
+
     for (i = 0; i < steps; i++) {
-        double t = (double)i / (steps - 1);
-        int cr = (int)(C_BG_TOP_R + (C_BG_BOT_R - C_BG_TOP_R)*t);
-        int cg = (int)(C_BG_TOP_G + (C_BG_BOT_G - C_BG_TOP_G)*t);
-        int cb = (int)(C_BG_TOP_B + (C_BG_BOT_B - C_BG_TOP_B)*t);
+        double u = (double)i / (steps - 1);
+        int cr = (int)(C_BG_TOP_R + (C_BG_BOT_R - C_BG_TOP_R)*u);
+        int cg = (int)(C_BG_TOP_G + (C_BG_BOT_G - C_BG_TOP_G)*u);
+        int cb = (int)(C_BG_TOP_B + (C_BG_BOT_B - C_BG_TOP_B)*u);
         col(r, cr, cg, cb);
         rect(r, 0, DESIGN_H*i/steps, DESIGN_W, DESIGN_H/steps + 1);
+    }
+
+    /* key light: a cold wash from the top edge, falling away with distance */
+    for (i = 0; i < 14; i++) {
+        int a = 26 - i * 2;
+
+        if (a <= 0)
+            break;
+        rect_a(r, 0, i * 40, DESIGN_W, 42, 58, 128, 226, a);
+    }
+
+    /* two beams, sliced thin and drifting a couple of pixels as they fall */
+    for (i = 0; i < 2; i++) {
+        int cx = DESIGN_W / 2 + (i ? 470 : -430)
+               + (int)(sin(t * 0.11 + i * 1.7) * 70.0);
+        int k;
+
+        for (k = 0; k < 54; k++) {
+            int a = 9 - k * 9 / 54;
+
+            if (a <= 0)
+                break;
+            rect_a(r, cx - 150 + k * 2, k * 22, 300, 24, 44, 116, 208, a);
+        }
+    }
+
+    /* smoke: three slow banks, each a puff plus a smaller one beside it */
+    for (i = 0; i < 3; i++) {
+        double ph = t * 0.06 * (1.0 + (i % 3) * 0.4) + i * 1.9;
+        int    cx = ((380 + i * 520) % DESIGN_W) + (int)(sin(ph) * 200.0);
+        int    cy = 240 + (i * 330) % 700 + (int)(cos(ph * 0.9) * 80.0);
+
+        smoke_puff(r, cx, cy, 560, 190, 4);
+        smoke_puff(r, cx + 250, cy + 80, 380, 130, 3);
+    }
+
+    /* vignette: four edges falling off, which is what sells the depth */
+    for (i = 0; i < 12; i++) {
+        int a = 30 - i * 2;
+
+        if (a <= 0)
+            break;
+        rect_a(r, i * 26, 0, 26, DESIGN_H, 2, 4, 9, a);
+        rect_a(r, DESIGN_W - (i + 1) * 26, 0, 26, DESIGN_H, 2, 4, 9, a);
+        rect_a(r, 0, i * 22, DESIGN_W, 22, 2, 4, 9, a / 2);
+        rect_a(r, 0, DESIGN_H - (i + 1) * 22, DESIGN_W, 22, 2, 4, 9, a / 2);
     }
 }
 
@@ -532,30 +1435,125 @@ static void bar(SDL_Renderer *r, int x, int y, int w, int h, float frac,
     }
 }
 
-/* The PS4 wordmark, drawn from the span table in ps4logo.h: no texture, no
- * SDL_image, no file to load on the console. */
-static void draw_ps4_logo(SDL_Renderer *r, int x, int y, int cr, int cg, int cb)
-{
-    size_t i;
+/* The clean emblem artwork, drawn from the tone runs in emblem.h: the same
+ * shape and shading as the file it was traced from, at a fifth of the cost of
+ * shipping a decoder. Four chrome tones, dark edge to hot highlight. */
+static SDL_Texture *s_em_tex;
+static int          s_em_tried;
 
-    col(r, cr, cg, cb);
-    for (i = 0; i < PS4_LOGO_RUNS; i++)
-        rect(r, x + ps4_logo_runs[i][0], y + ps4_logo_runs[i][1],
-             ps4_logo_runs[i][2], 1);
+/* The header emblem, decoded once from the embedded art and blitted as one
+ * texture. The traced-run version had the art's outline in one-pixel steps,
+ * which read as pixel blocks on the TV; this keeps every edge the artist drew. */
+static void emblem_build(SDL_Renderer *r)
+{
+    int w = 0, h = 0, n = 0;
+    unsigned char *pix;
+
+    s_em_tried = 1;
+    pix = stbi_load_from_memory(emblem_img_png, (int)sizeof(emblem_img_png),
+                                &w, &h, &n, 4);
+    if (!pix) {
+        plog("ui: emblem art did not decode");
+        return;
+    }
+
+    s_em_tex = SDL_CreateTexture(r, SDL_PIXELFORMAT_ABGR8888,
+                                 SDL_TEXTUREACCESS_STATIC, w, h);
+    if (s_em_tex) {
+        SDL_SetTextureBlendMode(s_em_tex, SDL_BLENDMODE_BLEND);
+        SDL_UpdateTexture(s_em_tex, NULL, pix, w * 4);
+        plog("ui: emblem %dx%d", w, h);
+    } else {
+        plog("ui: emblem texture could not be created");
+    }
+    free(pix);
+}
+
+static void draw_icon_emblem(SDL_Renderer *r, int x, int y)
+{
+    static const int pal[4][3] = {
+        {  12,  16,  26 },      /* black keyline */
+        { 172, 194, 216 },      /* brushed steel */
+        {  86, 140, 198 },      /* cool rim along the edge */
+        { 242, 249, 255 },      /* highlight */
+    };
+    int i;
+
+    if (!s_em_tried)
+        emblem_build(r);
+
+    if (s_em_tex) {
+        SDL_Rect dst;
+
+        dst.x = px(x);
+        dst.y = py(y);
+        dst.w = px(x + EMBLEM_W) - dst.x;
+        dst.h = py(y + EMBLEM_H) - dst.y;
+        SDL_RenderCopy(r, s_em_tex, NULL, &dst);
+        return;
+    }
+
+    /* fallback: the traced runs, in case the art ever fails to decode */
+    for (i = 0; i < (int)EMBLEM_RUNS; i++) {
+        int lv = emblem_runs[i][4] % 4;
+
+        col(r, pal[lv][0], pal[lv][1], pal[lv][2]);
+        rect(r, x + emblem_runs[i][1], y + emblem_runs[i][0],
+             emblem_runs[i][2], emblem_runs[i][3]);
+    }
+}
+
+/* Draws text that must stay inside a column: if it does not fit, it is cut and
+ * ended with three dots. Used by the header only, where the emblem owns the
+ * right-hand side and a long filename used to run underneath it and vanish.
+ * Rejected: scrolling the line (motion in a header that is otherwise still, and
+ * it needs a timer of its own) and clipping without a mark (looks like a
+ * truncated file, which is exactly the thing the owner reported). */
+static void text_fit(SDL_Renderer *r, int x, int y, int scale, const char *s,
+                     int max_w, int cr, int cg, int cb)
+{
+    char   buf[256];
+    int    n;
+
+    if (!s || !s[0])
+        return;
+    if (max_w <= 0 || text_width(s, scale) <= max_w) {
+        text_at(r, x, y, scale, s, cr, cg, cb);
+        return;
+    }
+
+    n = (int)strlen(s);
+    if (n > (int)sizeof(buf) - 5)
+        n = (int)sizeof(buf) - 5;
+    memcpy(buf, s, (size_t)n);
+    buf[n] = 0;
+    while (n > 0) {
+        n--;
+        buf[n] = 0;
+        if (text_width(buf, scale) + text_width("...", scale) <= max_w)
+            break;
+    }
+    strcat(buf, "...");
+    text_at(r, x, y, scale, buf, cr, cg, cb);
 }
 
 static void header(SDL_Renderer *r, const UiModel *m)
 {
-    text_at(r, SAFE_X, 44, 3, m->app_title, C_TEXT);
+    /* The emblem is at the right edge of the header, so both lines stop short of
+     * it instead of running under it (v117). Same geometry the emblem uses below. */
+    const int emb_x   = DESIGN_W - SAFE_X - 226 - 62 - EMBLEM_W;
+    const int title_w = emb_x - 24 - SAFE_X;
+
+    text_fit(r, SAFE_X, 44, 3, m->app_title, title_w, C_TEXT);
     if (m->status && m->status[0])
-        text_at(r, SAFE_X + 2, 102, 1, m->status, C_DIM);
+        text_fit(r, SAFE_X + 2, 102, 1, m->status, title_w, C_DIM);
 
     {
         const int cw = 226, ch = 68, cy = 46;
         const int cx = DESIGN_W - SAFE_X - cw;
 
-        /* the console's own mark, sitting beside the title block */
-        draw_ps4_logo(r, cx - 32 - PS4_LOGO_W, 60, 198, 208, 228);
+        /* the clean emblem artwork, top right, where the old mark sat */
+        draw_icon_emblem(r, cx - 62 - EMBLEM_W, 32);
 
         col(r, m->playing ? 22 : 34, m->playing ? 52 : 38,
                m->playing ? 56 : 48);
@@ -582,20 +1580,53 @@ static void header(SDL_Renderer *r, const UiModel *m)
 static void track_list(SDL_Renderer *r, const UiModel *m)
 {
     const int x = SAFE_X, y = 180, w = 1180, h = 760;
-    const int row_h = 78, rows_visible = 8;
+    const int row_h = 74, rows_visible = 7;
     const int list_x = x + 28, list_w = w - 56;
-    const int first_row_y = y + 122;
+    const int first_row_y = y + 158;
     int i, shown = 0, first = 0;
     char head[64];
 
     col(r, C_PANEL);
     round_rect(r, x, y, w, h, 22);
 
-    snprintf(head, sizeof(head), "LIBRARY    %d TRACK%s", m->track_count,
-             m->track_count == 1 ? "" : "S");
-    text_at(r, list_x, y + 40, 2, head, C_DIM);
+    /* The four ways into the collection, as tabs across the panel. Square
+     * swaps between them; the underline says which one is showing. */
+    {
+        static const char *const tabs[] = { "TRACKS", "ARTISTS", "ALBUMS", "GENRES" };
+        int t, tx = list_x, ty = y + 30;
+
+        for (t = 0; t < 4; t++) {
+            int tw  = text_width(tabs[t], 2) + 36;
+            int sel = (t == m->music_view);
+
+            text_at(r, tx + 18, ty, 2, tabs[t], sel ? C_ACCENT : C_FAINT);
+            if (sel) {
+                col(r, C_ACCENT);
+                rect(r, tx + 16, ty + 38, tw - 32, 3);
+            }
+            tx += tw + 12;
+        }
+        snprintf(head, sizeof(head), "%d", m->track_count);
+        text_right(r, list_x + list_w, ty, 2, head, C_DIM);
+    }
+
+    /* Where we are: ARTISTS > Daft Punk. Empty at the top of a list. */
+    {
+        char crumb[192], cut[192];
+
+        if (m->music_level > 0 && m->music_crumb && m->music_crumb[0]) {
+            snprintf(crumb, sizeof(crumb), "%s   >   %s", m->music_view_name,
+                     m->music_crumb);
+            fit_text(cut, sizeof(cut), crumb, list_w, 2);
+            text_at(r, list_x, y + 100, 2, cut, C_DIM);
+        } else {
+            snprintf(crumb, sizeof(crumb), "%s    %d", m->music_view_name,
+                     m->track_count);
+            text_at(r, list_x, y + 100, 2, crumb, C_DIM);
+        }
+    }
     col(r, C_LINE);
-    rect(r, list_x, y + 88, list_w, 2);
+    rect(r, list_x, y + 134, list_w, 2);
 
     if (m->selected >= rows_visible)
         first = m->selected - rows_visible + 1;
@@ -607,9 +1638,11 @@ static void track_list(SDL_Renderer *r, const UiModel *m)
         int ry = first_row_y + shown*row_h;
         int is_sel = (i == m->selected);
         int is_cur = (i == m->current);
+        const char *sub = (m->tracks[i].sub && m->tracks[i].sub[0])
+                        ? m->tracks[i].sub : (m->tracks[i].is_video ? "VIDEO" : "MP3");
         /* reserve the right-hand column for the tag and the ON AIR marker, so
          * a long name is cut short instead of running underneath them */
-        int tag_w = text_width(m->tracks[i].is_video ? "VIDEO" : "MP3", 2);
+        int tag_w = text_width(sub, 2);
         int name_max = list_w - 104 - 28 - tag_w - 28 -
                        (is_cur ? text_width("ON AIR", 2) + 28 : 0);
         char name[96], num[16];
@@ -622,19 +1655,20 @@ static void track_list(SDL_Renderer *r, const UiModel *m)
         }
 
         snprintf(num, sizeof(num), "%02d", i + 1);
-        if (is_sel) text_at(r, list_x + 28, ry + 24, 2, num, C_ACCENT);
-        else        text_at(r, list_x + 28, ry + 24, 2, num, C_FAINT);
+        if (is_sel) text_at(r, list_x + 28, ry + 22, 2, num, C_ACCENT);
+        else        text_at(r, list_x + 28, ry + 22, 2, num, C_FAINT);
 
         fit_text(name, sizeof(name), m->tracks[i].name, name_max, 2);
-        if (is_cur) text_at(r, list_x + 104, ry + 24, 2, name, C_ACCENT2);
-        else        text_at(r, list_x + 104, ry + 24, 2, name, C_TEXT);
+        if (is_cur)    text_at(r, list_x + 104, ry + 22, 2, name, C_ACCENT2);
+        else if (is_sel) text_at(r, list_x + 104, ry + 22, 2, name, C_TEXT);
+        else           text_at(r, list_x + 104, ry + 22, 2, name,
+                               m->tracks[i].is_category ? C_DIM : C_TEXT);
 
         if (is_cur)
-            text_right(r, list_x + list_w - 28 - tag_w - 24, ry + 24, 2,
+            text_right(r, list_x + list_w - 28 - tag_w - 24, ry + 22, 2,
                        m->playing ? "ON AIR" : "HELD", C_ACCENT2);
 
-        text_right(r, list_x + list_w - 28, ry + 24, 2,
-                   m->tracks[i].is_video ? "VIDEO" : "MP3",
+        text_right(r, list_x + list_w - 28, ry + 22, 2, sub,
                    is_sel ? C_DIM_R : C_FAINT_R,
                    is_sel ? C_DIM_G : C_FAINT_G,
                    is_sel ? C_DIM_B : C_FAINT_B);
@@ -642,7 +1676,28 @@ static void track_list(SDL_Renderer *r, const UiModel *m)
 
     if (m->track_count == 0)
         text_center(r, x + w/2, y + h/2 - 30, 2,
-                    "NO MEDIA FOUND IN /data/music", C_DIM);
+                    "NO MUSIC FOUND - PRESS OPTIONS FOR DRIVES", C_DIM);
+}
+
+/* ------------------------------------------------------------ visualizer -- */
+
+/* Seventeen looks over the same analysis data, so switching styles never
+ * changes what the picture means: spectrum.c supplies 32 log bands, the newest
+ * 160 samples and the overall level; vis_art.c paints every one of them. */
+static void visualizer(SDL_Renderer *r, const UiModel *m, int x, int y, int w, int h)
+{
+    int style = m->vis_style;
+
+    if (style < 0 || style >= VIS_STYLE_COUNT)
+        style = VIS_STYLE_SPECTRUM;
+
+    /* the plate every look sits in */
+    col(r, 14, 18, 28);
+    round_rect(r, x - 12, y - 12, w + 24, h + 24, 14);
+
+    /* Every visualization is painted in vis_art.c now - one canvas, one blit,
+     * real curves. The rectangle versions that used to live here are gone. */
+    vis_art_draw(r, m, style, x, y, w, h);
 }
 
 static void now_playing(SDL_Renderer *r, const UiModel *m)
@@ -696,76 +1751,65 @@ static void now_playing(SDL_Renderer *r, const UiModel *m)
             text_right(r, x + pad + inner_w, y + 296, 2, t1, C_DIM);
         }
 
-        snprintf(line, sizeof(line), "VOLUME   %+d DB", m->volume_db);
-        text_at(r, x + pad, y + 364, 2, line, C_DIM);
-        bar(r, x + pad, y + 402, inner_w, 18, m->volume_frac, C_ACCENT2);
+        if (m->volume_muted)
+            snprintf(line, sizeof(line), "VOLUME    MUTED");
+        else
+            snprintf(line, sizeof(line), "VOLUME   %+d DB", m->volume_db);
+        text_at(r, x + pad, y + 364, 2, line,
+                m->volume_muted ? C_WARN_R : C_DIM_R,
+                m->volume_muted ? C_WARN_G : C_DIM_G,
+                m->volume_muted ? C_WARN_B : C_DIM_B);
+        bar(r, x + pad, y + 402, inner_w, 18, m->volume_frac,
+            m->volume_muted ? C_WARN_R : C_ACCENT2_R,
+            m->volume_muted ? C_WARN_G : C_ACCENT2_G,
+            m->volume_muted ? C_WARN_B : C_ACCENT2_B);
 
-        text_at(r, x + pad, y + 462, 2, "EQUALIZER", C_DIM);
         {
-            int i, bw = 30, gap = (inner_w - EQ_BANDS*bw) / (EQ_BANDS - 1);
-            int top = y + 500, hgt = 180, mid = top + hgt/2;
+            char vis[64];
+            int  style = (m->vis_style >= 0 && m->vis_style < VIS_STYLE_COUNT)
+                       ? m->vis_style : VIS_STYLE_SPECTRUM;
 
-            /* grid at 0, +/-3 and +/-6 dB, so the plot reads as a scale rather
-             * than as free-floating bars, and it fills the card's lower half */
-            for (i = 0; i <= 4; i++) {
-                int gy = top + i*hgt/4;
-                if (i == 2) col(r, C_LINE);
-                else        col(r, 32, 41, 60);
-                rect(r, x + pad, gy, inner_w, 2);
-            }
+            snprintf(vis, sizeof(vis), "%s   %d/%d", vis_style_name(style),
+                     style + 1, VIS_STYLE_COUNT);
+            text_at(r, x + pad, y + 452, 1, "VISUALIZATION", C_DIM);
+            text_right(r, x + pad + inner_w, y + 448, 2, vis, C_ACCENT2);
 
-            for (i = 0; i < EQ_BANDS; i++) {
-                float g = m->eq_gain_db[i];
-                /* +/-6 dB across the full height: the common range for music
-                 * presets, so a 2 dB move is actually visible at this size */
-                int half = (int)((g / 6.0f) * (hgt/2 - 8));
-                int bx = x + pad + i*(bw + gap);
-
-                if (half >   hgt/2 - 6) half =   hgt/2 - 6;
-                if (half < -(hgt/2 - 6)) half = -(hgt/2 - 6);
-
-                col(r, g >= 0 ? C_ACCENT2_R : C_WARN_R,
-                       g >= 0 ? C_ACCENT2_G : C_WARN_G,
-                       g >= 0 ? C_ACCENT2_B : C_WARN_B);
-                if (half >= 0) rect(r, bx, mid - half, bw, half > 0 ? half : 2);
-                else           rect(r, bx, mid, bw, -half);
-            }
-
-            /* zero line on top of the bars, so positive and negative bands are
-             * unambiguous at a glance */
-            col(r, C_LINE);
-            rect(r, x + pad, mid, inner_w, 2);
-
-            {
-                static const UiHint adj[] = { { BTN_TRIANGLE, "ADJUST" } };
-
-                hint_at(r, x + pad, y + 704, adj, 1);
-            }
+            visualizer(r, m, x + pad, y + 500, inner_w, 250);
         }
     }
 }
 
 static void footer(SDL_Renderer *r, const UiModel *m)
 {
+    /* Every key the music section answers is on this row, including the
+     * triggers and L3: a function with no hint is a function nobody finds. */
     static const UiHint library[] = {
-        { BTN_CROSS,  "PLAY / PAUSE" },
-        { BTN_SQUARE, "STOP" },
-        { BTN_L1,     "" },
-        { BTN_R1,     "PREV / NEXT" },
-        { BTN_LEFT,   "" },
-        { BTN_RIGHT,  "VOLUME" },
-        { BTN_TRIANGLE, "EQUALIZER" },
-        { BTN_SHARE,  "DRIVES" },
-        { BTN_CIRCLE, "QUIT" },
-    };
-    static const UiHint browser[] = {
-        { BTN_CROSS,  "OPEN" },
+        { BTN_CROSS,  "PLAY" },
+        { BTN_SQUARE, "VIEW" },
+        { BTN_L1,     "PREV" },
+        { BTN_R1,     "NEXT" },
+        { BTN_L2,     "PAGE UP" },
+        { BTN_R2,     "PAGE DOWN" },
+        { BTN_LEFT,   "VOL-" },
+        { BTN_RIGHT,  "VOL+" },
+        { BTN_TRIANGLE, "VIS" },
+        { BTN_L3,     "FULL" },
+        { BTN_R3,     "EQ" },
+        { BTN_OPTIONS, "FILES" },
         { BTN_CIRCLE, "BACK" },
-        { BTN_SQUARE, "RESCAN" },
-        { BTN_L1,     "" },
-        { BTN_R1,     "PAGE" },
-        { BTN_TRIANGLE, "EQUALIZER" },
-        { BTN_SHARE,  "LIBRARY" },
+    };
+    /* The file browser shows only file-browser actions: no equalizer, no
+     * player keys. Delete asks first; copy, cut and paste work on files. */
+    static const UiHint browser[] = {
+        { BTN_CROSS,    "OPEN" },
+        { BTN_SQUARE,   "DELETE" },
+        { BTN_TRIANGLE, "COPY" },
+        { BTN_L1,       "CUT" },
+        { BTN_R1,       "PG DN" },
+        { BTN_L3,       "RESCAN" },
+        { BTN_OPTIONS,  "PASTE" },
+        { BTN_R3,       "EQUALIZER" },
+        { BTN_CIRCLE,   "BACK" },
     };
 
     if (m->screen == UI_SCREEN_BROWSER)
@@ -794,6 +1838,34 @@ static void browser_screen(SDL_Renderer *r, const UiModel *m)
             m->browser_title ? m->browser_title : "DRIVES", C_DIM);
     if (m->browser_note && m->browser_note[0])
         text_right(r, list_x + list_w, y + 40, 2, m->browser_note, C_FAINT);
+
+    /* Is anything actually in a USB slot right now? The badge lives on the
+     * DRIVES line, left of the item count, so it cannot sit on top of the
+     * first row while ALL MEDIA (LIBRARY) is highlighted. The dot is filled
+     * and green with a stick in, hollow and grey with none. */
+    {
+        char usb[64];
+        int  on = m->usb_present;
+        int  note_w = (m->browser_note && m->browser_note[0])
+                    ? text_width(m->browser_note, 2) : 0;
+        int  right  = list_x + list_w - note_w - (note_w ? 44 : 0);
+        int  tw     = 0;
+
+        if (on)
+            snprintf(usb, sizeof(usb), "USB  %d CONNECTED", m->usb_count);
+        else
+            snprintf(usb, sizeof(usb), "USB  NO DEVICE");
+        tw = text_width(usb, 1);
+        if (on)
+            col(r, C_OK);
+        else
+            col(r, C_FAINT);
+        ddisc(r, right - tw - 20, y + 48, on ? 6 : 5);
+        text_right(r, right, y + 40, 1, usb,
+                   on ? C_OK_R : C_FAINT_R, on ? C_OK_G : C_FAINT_G,
+                   on ? C_OK_B : C_FAINT_B);
+    }
+
     col(r, C_LINE);
     rect(r, list_x, y + 88, list_w, 2);
 
@@ -810,10 +1882,12 @@ static void browser_screen(SDL_Renderer *r, const UiModel *m)
         char name[96];
         int  tag_w;
 
-        if (m->entries[i].is_action)     tag = "";
-        else if (m->entries[i].is_drive) tag = "DRIVE";
-        else if (m->entries[i].is_dir)   tag = "FOLDER";
-        else if (m->entries[i].is_video) tag = "VIDEO";
+        if (m->entries[i].is_action)       tag = "";
+        else if (m->entries[i].is_drive)   tag = "DRIVE";
+        else if (m->entries[i].is_dir)     tag = "FOLDER";
+        else if (m->entries[i].is_video)   tag = "VIDEO";
+        else if (m->entries[i].is_picture) tag = "IMAGE";
+        else if (m->entries[i].is_other)   tag = "FILE";
         tag_w = text_width(tag, 2);
 
         if (is_sel) {
@@ -846,6 +1920,45 @@ static void browser_screen(SDL_Renderer *r, const UiModel *m)
 
     if (m->entry_count == 0)
         text_center(r, x + w/2, y + h/2 - 20, 2, "NOTHING HERE", C_DIM);
+
+    /* what is on the clipboard, so a paste later is not a guess */
+    if (m->clip_note && m->clip_note[0] && m->clip_name && m->clip_name[0]) {
+        char line[96];
+
+        snprintf(line, sizeof(line), "CLIPBOARD  %s  %.40s", m->clip_note,
+                 m->clip_name);
+        text_at(r, list_x, y + h - 44, 1, line, C_ACCENT2);
+    }
+
+    /* The delete confirmation: a real question, over everything, that only
+     * Cross answers. */
+    if (m->confirm_delete) {
+        const int mx = DESIGN_W/2 - 460, my = DESIGN_H/2 - 170;
+        const int mw = 920, mh = 340;
+        char   line[160];
+
+        round_rect_a(r, 0, 0, DESIGN_W, DESIGN_H, 0, 0, 0, 0, 150);
+        col(r, C_PANEL);
+        round_rect(r, mx, my, mw, mh, 22);
+        col(r, C_WARN);
+        round_rect(r, mx, my, mw, 6, 3);
+
+        text_center(r, DESIGN_W/2, my + 52, 3, "DELETE THIS FILE?", C_TEXT);
+        fit_text(line, sizeof(line), m->confirm_name ? m->confirm_name : "",
+                 mw - 120, 2);
+        text_center(r, DESIGN_W/2, my + 132, 2, line, C_ACCENT2);
+        text_center(r, DESIGN_W/2, my + 196, 1,
+                    "THIS CANNOT BE UNDONE", C_FAINT);
+        {
+            static const UiHint ask[] = {
+                { BTN_CROSS,  "DELETE" },
+                { BTN_CIRCLE, "KEEP IT" },
+            };
+
+            hint_row(r, DESIGN_W/2, my + mh - 96, ask,
+                     (int)(sizeof(ask)/sizeof(ask[0])));
+        }
+    }
 }
 
 static void eq_overlay(SDL_Renderer *r, const UiModel *m)
@@ -858,32 +1971,74 @@ static void eq_overlay(SDL_Renderer *r, const UiModel *m)
     const int top = y + 280, hgt = 340, mid = top + hgt/2;
     int i;
 
+    /* The dim over the screen behind the panel. It used to be one blended
+     * rect the size of the whole frame, and that single command cost 108 ms a
+     * frame on the console: blending a 1080p frame is 2,073,600 pixels at
+     * about 52 ns each, so the equaliser ran at six frames a second while the
+     * library behind it ran at fifteen. The panel is painted opaque straight
+     * after this, so every pixel under it is thrown away - dimming only what
+     * can actually be seen is the same picture for 58% less blended work.
+     *
+     * The four corner staircase rows are the complement of round_rect()'s own
+     * arc, drawn with the same formula, so the dimmed area meets the rounded
+     * corner exactly instead of leaving a bright notch behind it. */
     {
-        SDL_Rect full;
-        full.x = 0; full.y = 0; full.w = px(DESIGN_W); full.h = py(DESIGN_H);
-        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(r, 4, 6, 10, 170);
-        SDL_RenderFillRect(r, &full);
-        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+        const int rad = 22;
+        int       k;
+
+        rect_a(r, 0, 0, DESIGN_W, y, 4, 6, 10, 170);                   /* above */
+        rect_a(r, 0, y + h, DESIGN_W, DESIGN_H - (y + h), 4, 6, 10, 170);
+        rect_a(r, 0, y, x, h, 4, 6, 10, 170);                          /* left  */
+        rect_a(r, x + w, y, DESIGN_W - (x + w), h, 4, 6, 10, 170);     /* right */
+
+        for (k = 0; k < rad; k++) {
+            double dy   = k + 0.5;
+            double span = sqrt((double)rad*rad - (rad - dy)*(rad - dy));
+            int    cut  = rad - (int)(span + 0.5);
+
+            if (cut <= 0)
+                continue;
+            rect_a(r, x, y + k, cut, 1, 4, 6, 10, 170);
+            rect_a(r, x + w - cut, y + k, cut, 1, 4, 6, 10, 170);
+            rect_a(r, x, y + h - 1 - k, cut, 1, 4, 6, 10, 170);
+            rect_a(r, x + w - cut, y + h - 1 - k, cut, 1, 4, 6, 10, 170);
+        }
     }
 
     col(r, 13, 17, 26);
     round_rect(r, x, y, w, h, 22);
     col(r, C_LINE);
-    rect(r, x + pad, y + 168, w - 2*pad, 2);
+    rect(r, x + pad, y + 196, w - 2*pad, 2);
 
     text_at(r, x + pad, y + 56, 3, "EQUALIZER", C_TEXT);
     {
         static const UiHint eq_hints[] = {
-            { BTN_UP,    "" },
-            { BTN_DOWN,  "ADJUST" },
-            { BTN_LEFT,  "" },
+            { BTN_UP,    "BOOST" },
+            { BTN_DOWN,  "CUT" },
+            { BTN_LEFT,  "BAND" },
             { BTN_RIGHT, "BAND" },
-            { BTN_TRIANGLE, "CLOSE" },
+            { BTN_SQUARE, "PRESETS" },
+            { BTN_CIRCLE, "CLOSE" },
         };
 
         hint_at(r, x + pad, y + 104, eq_hints,
                 (int)(sizeof(eq_hints)/sizeof(eq_hints[0])));
+    }
+
+    /* The preset drop-down, right where the header ends: a box that names the
+     * curve that is on, and a list of all eight under it once Square opens it. */
+    {
+        const int dw = 340, dx = x + w - pad - dw, dy = y + 46;
+        char      head[64];
+
+        snprintf(head, sizeof(head), "%s", eq_preset_name(m->eq_preset));
+        round_rect_a(r, dx, dy, dw, 58, 12, 10, 14, 21, 230);
+        text_at(r, dx + 18, dy + 18, 1, "PRESET", C_DIM);
+        text_right(r, dx + dw - 40, dy + 14, 2, head, C_ACCENT2);
+        text_right(r, dx + dw - 16, dy + 18, 2, "v",
+                   m->eq_preset_open ? C_ACCENT2_R : C_DIM_R,
+                   m->eq_preset_open ? C_ACCENT2_G : C_DIM_G,
+                   m->eq_preset_open ? C_ACCENT2_B : C_DIM_B);
     }
 
     col(r, C_LINE);
@@ -893,7 +2048,11 @@ static void eq_overlay(SDL_Renderer *r, const UiModel *m)
         int cx = x + pad + i*slot_w + slot_w/2;
         int is_sel = (i == m->eq_band);
         float g = (i == EQ_BANDS) ? m->eq_preamp_db : m->eq_gain_db[i];
-        int half = (int)((g / 12.0f) * (hgt/2 - 10));
+        /* Full scale is the same +-12 dB the bands are limited to, so the
+         * maximum value fills its column instead of stopping short. */
+        int half = (int)((g / 12.0f) * (hgt/2));
+        if (half >  hgt/2) half =  hgt/2;
+        if (half < -hgt/2) half = -hgt/2;
         char label[24], value[16];
 
         if (is_sel) {
@@ -923,9 +2082,37 @@ static void eq_overlay(SDL_Renderer *r, const UiModel *m)
         if (is_sel) text_center(r, cx, top - 58, 2, value, C_ACCENT2);
         else        text_center(r, cx, top - 58, 2, value, C_FAINT);
     }
+
+    /* The dropped-down list is drawn last, over the bars it would otherwise
+     * have cut through: a menu that the meter shows through is unreadable. */
+    if (m->eq_preset_open) {
+        const int dw = 340, dx = x + w - pad - dw, dy = y + 112;
+        const int rh = 44;
+
+        col(r, 8, 11, 18);
+        round_rect(r, dx, dy, dw, rh * EQ_PRESET_COUNT + 16, 12);
+        col(r, C_ACCENT);
+        rect(r, dx + 8, dy, dw - 16, 2);
+        for (i = 0; i < EQ_PRESET_COUNT; i++) {
+            int ry = dy + 8 + i * rh;
+
+            if (i == m->eq_preset_sel) {
+                col(r, C_PANEL_HI);
+                round_rect(r, dx + 6, ry, dw - 12, rh - 4, 8);
+            }
+            text_at(r, dx + 20, ry + 12, 2, eq_preset_name(i),
+                    i == m->eq_preset_sel ? C_ACCENT2_R : C_DIM_R,
+                    i == m->eq_preset_sel ? C_ACCENT2_G : C_DIM_G,
+                    i == m->eq_preset_sel ? C_ACCENT2_B : C_DIM_B);
+            if (i == m->eq_preset)
+                text_right(r, dx + dw - 20, ry + 14, 1, "SET", C_ACCENT);
+        }
+    }
 }
 
 /* ------------------------------------------------------------------ api --- */
+
+static void home_screen(SDL_Renderer *r, const UiModel *m);
 
 void ui_draw(SDL_Renderer *r, const UiModel *m, int w, int h)
 {
@@ -933,7 +2120,30 @@ void ui_draw(SDL_Renderer *r, const UiModel *m, int w, int h)
     if (h > 0) s_h = h;
     s_scale = (double)s_w / (double)DESIGN_W;
 
+    /* The opaque panels this screen paints. Their insides are skipped by the
+     * background and painted by the panel; keep these in step with
+     * home_screen(), track_list(), now_playing() and browser_screen(). */
+    s_bg_holes = 0;
+    if (m->screen == UI_SCREEN_HOME) {
+        bg_hole(SAFE_X,          260, 842, 290, 24);
+        bg_hole(SAFE_X + 882,    260, 842, 290, 24);
+        bg_hole(SAFE_X,          590, 842, 290, 24);
+        bg_hole(SAFE_X + 882,    590, 842, 290, 24);
+    } else if (m->screen == UI_SCREEN_BROWSER) {
+        bg_hole(SAFE_X, 180, DESIGN_W - 2*SAFE_X, 760, 20);
+    } else {
+        bg_hole(SAFE_X, 180, 1180, 760, 22);
+        bg_hole(1308,   180, DESIGN_W - SAFE_X - 1308, 760, 22);
+    }
+
     background(r);
+    if (m->screen == UI_SCREEN_HOME) {
+        home_screen(r, m);
+        if (m->eq_open)
+            eq_overlay(r, m);
+        return;
+    }
+
     header(r, m);
     if (m->screen == UI_SCREEN_BROWSER) {
         browser_screen(r, m);
@@ -970,6 +2180,18 @@ static void video_dest_rect(int fw, int fh, int mode, SDL_Rect *dst)
         }
         dst->x = (s_w - dst->w) / 2;
         dst->y = (s_h - dst->h) / 2;
+    }
+    /* A rect within a few percent of the frame size is drawn as a straight
+     * copy, not a 0.99x scale. The software renderer's scaled blit measured
+     * ~45 ms a frame at 1920x1088 while its unscaled one is a row copy; the
+     * few rows that fall outside are clipped, which at this ratio is a 0.3%
+     * crop nobody can see. */
+    if (mode != UI_ASPECT_STRETCH && dst->w < fw && dst->w > 0 &&
+        fw - dst->w <= fw / 32) {
+        dst->w = fw;
+        dst->h = fh;
+        dst->x = (s_w - fw) / 2;
+        dst->y = (s_h - fh) / 2;
     }
 }
 
@@ -1123,24 +2345,26 @@ static const char *const k_sub_size_names[UI_SUB_SIZE_COUNT] = {
  * right-aligned so the eye can compare them down the column. */
 static void video_settings_panel(SDL_Renderer *r, const UiModel *m)
 {
-    const int x = DESIGN_W - SAFE_X - 720, y = 100, w = 720, h = 640;
+    /* Starts below the header's PLAYING badge: the card used to tuck under it
+     * and leave a green sliver showing above its top edge. */
+    const int x = DESIGN_W - SAFE_X - 760, y = 132, w = 760, h = 800;
     const int pad = 48;
-    const int row_y = y + 184, row_h = 92;
+    const int row_y = y + 200, row_h = 86;
     int i;
 
     col(r, 13, 17, 26);
     round_rect(r, x, y, w, h, 20);
     col(r, C_LINE);
-    rect(r, x + pad, y + 160, w - 2*pad, 2);
+    rect(r, x + pad, y + 190, w - 2*pad, 2);
 
-    text_at(r, x + pad, y + 40, 3, "VIDEO SETTINGS", C_TEXT);
+    /* Pictures and sound are separate screens: this panel holds the picture
+     * settings only, and says where the equalizer lives. */
+    text_at(r, x + pad, y + 40, 3, "PICTURE SETTINGS", C_TEXT);
     {
         static const UiHint set_hints[] = {
-            { BTN_UP,    "" },
             { BTN_DOWN,  "ROW" },
-            { BTN_LEFT,  "" },
             { BTN_RIGHT, "CHANGE" },
-            { BTN_TRIANGLE, "DONE" },
+            { BTN_CIRCLE, "DONE" },
         };
 
         hint_at(r, x + pad, y + 96, set_hints,
@@ -1161,6 +2385,14 @@ static void video_settings_panel(SDL_Renderer *r, const UiModel *m)
         case UI_VIDEO_ROW_BRIGHTNESS:
             label = "BRIGHTNESS";
             snprintf(value, sizeof(value), "%+d", m->video_brightness);
+            break;
+        case UI_VIDEO_ROW_SATURATION:
+            label = "COLOR";
+            snprintf(value, sizeof(value), "%d%%", m->video_saturation);
+            break;
+        case UI_VIDEO_ROW_SHARPNESS:
+            label = "SHARPNESS";
+            snprintf(value, sizeof(value), "%d%%", m->video_sharpness);
             break;
         case UI_VIDEO_ROW_SUBTITLES:
             label = "SUBTITLES";
@@ -1199,8 +2431,11 @@ static void video_settings_panel(SDL_Renderer *r, const UiModel *m)
         }
     }
 
-    text_at(r, x + pad, y + h - 48, 1,
+    text_at(r, x + pad, y + h - 82, 1, "R3  OPENS THE EQUALIZER", C_DIM);
+    text_at(r, x + pad, y + h - 56, 1,
             "SUBTITLES READ .SRT AND .VTT FILES NEXT TO THE VIDEO", C_DIM);
+    text_at(r, x + pad, y + h - 30, 1,
+            "100% COLOR AND 0% SHARPNESS LEAVE THE PICTURE ALONE", C_DIM);
 }
 
 void ui_draw_video(SDL_Renderer *r, SDL_Texture *frame, int fw, int fh,
@@ -1208,7 +2443,7 @@ void ui_draw_video(SDL_Renderer *r, SDL_Texture *frame, int fw, int fh,
 {
     /* Everything below is authored in design units; only the blit rects and
      * the subtitle band go through px()/py() when they reach SDL. */
-    const int barh = 244;
+    const int barh = 240;
     const int top  = DESIGN_H - barh;
     int  frac;
     char name[128], pos[32], dur[32], line[64];
@@ -1224,6 +2459,21 @@ void ui_draw_video(SDL_Renderer *r, SDL_Texture *frame, int fw, int fh,
         SDL_Rect dst;
 
         video_dest_rect(fw, fh, m->video_aspect, &dst);
+        /* The blit is the most expensive thing on screen when the renderer is
+         * software: its rect says how much of it is scaling rather than a
+         * straight copy. Logged once per geometry change, not per frame. */
+        {
+            static int lw, lh, ldw, ldh, lx, ly;
+
+            if (fw != lw || fh != lh || dst.w != ldw || dst.h != ldh ||
+                dst.x != lx || dst.y != ly) {
+                plog("ui: picture %dx%d -> %dx%d at %d,%d view=%dx%d scale=%.3f bright=%d",
+                     fw, fh, dst.w, dst.h, dst.x, dst.y, s_w, s_h,
+                     (double)dst.w / (double)fw, m->video_brightness);
+                lw = fw; lh = fh; ldw = dst.w; ldh = dst.h;
+                lx = dst.x; ly = dst.y;
+            }
+        }
         SDL_RenderCopy(r, frame, NULL, &dst);
         brightness_veil(r, &dst, m->video_brightness);
     } else {
@@ -1239,66 +2489,754 @@ void ui_draw_video(SDL_Renderer *r, SDL_Texture *frame, int fw, int fh,
     if (!m->video_hud)
         return;
 
-    /* transport bar */
+    /* Transport bar: three tidy rows - a real progress bar, one title line
+     * carrying the name and both times, one detail line - with the key hints
+     * under them. It is 240 of 1080 lines tall because the hints are now a
+     * column (emblem, then its label underneath) and need the extra height. */
     {
         SDL_Rect bar = { 0, py(top), s_w, py(barh) };
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(r, 4, 6, 11, 212);
+        SDL_SetRenderDrawColor(r, 4, 6, 11, 216);
         SDL_RenderFillRect(r, &bar);
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+        col(r, C_ACCENT);
+        rect(r, 0, top, DESIGN_W, 3);
     }
 
-    /* progress: a hairline along the top edge of the bar */
-    col(r, C_LINE);
-    {
-        SDL_Rect tr = { 0, py(top), s_w, py(4) };
-        SDL_RenderFillRect(r, &tr);
-    }
     frac = 0;
     if (m->duration_sec > 0.0) {
         frac = (int)(m->elapsed_sec / m->duration_sec * 1000.0);
         if (frac < 0)   frac = 0;
         if (frac > 1000) frac = 1000;
     }
-    col(r, C_ACCENT);
-    if (frac > 0) {
-        SDL_Rect pr = { 0, py(top), s_w * frac / 1000, py(4) };
-        SDL_RenderFillRect(r, &pr);
+
+    /* the progress bar: 16 px of track with a knob, instead of a 4 px
+     * hairline nobody could see across the room */
+    {
+        const int tx = 72, tw = DESIGN_W - 144, ty = top + 28, th = 16;
+        const int fw = tw * frac / 1000;
+        const int kx = tx + fw - 5;
+
+        col(r, 30, 36, 49);
+        round_rect(r, tx, ty, tw, th, th/2);
+        if (fw > 0) {
+            col(r, C_ACCENT);
+            round_rect(r, tx, ty, fw < th ? th : fw, th, th/2);
+        }
+        col(r, C_TEXT);
+        round_rect(r, kx < tx ? tx : (kx > tx + tw - 10 ? tx + tw - 10 : kx),
+                   ty - 5, 10, th + 10, 5);
     }
 
     {
         const char *title = (m->tracks && m->current >= 0)
                           ? m->tracks[m->current].name : "";
-        fit_text(name, sizeof(name), title, DESIGN_W - 520, 3);
-        text_at(r, 72, top + 44, 3, name, C_TEXT);
+        fit_text(name, sizeof(name), title, DESIGN_W - 560, 3);
+        text_at(r, 72, top + 62, 3, name, C_TEXT);
     }
 
     fmt_time(pos, sizeof(pos), m->elapsed_sec);
     fmt_time(dur, sizeof(dur), m->duration_sec);
     snprintf(line, sizeof(line), "%.23s / %.23s", pos, dur);
-    text_right(r, DESIGN_W - 72, top + 44, 3, line, C_DIM);
+    text_right(r, DESIGN_W - 72, top + 62, 3, line,
+               m->playing ? C_DIM_R : C_ACCENT2_R,
+               m->playing ? C_DIM_G : C_ACCENT2_G,
+               m->playing ? C_DIM_B : C_ACCENT2_B);
 
     if (m->format_note)
-        text_at(r, 72, top + 112, 2, m->format_note, C_ACCENT);
-
+        text_at(r, 72, top + 118, 2, m->format_note, C_ACCENT);
     if (!m->playing)
-        text_right(r, DESIGN_W - 72, top + 112, 2, "PAUSED", C_ACCENT2);
+        text_right(r, DESIGN_W - 72, top + 118, 2, "PAUSED", C_ACCENT2);
 
     {
         const UiHint vid[] = {
             { BTN_CROSS,  m->playing ? "PAUSE" : "RESUME" },
-            { BTN_LEFT,   "" },
-            { BTN_RIGHT,  "SEEK" },
-            { BTN_TRIANGLE, "SETTINGS" },
-            { BTN_L1,     "" },
-            { BTN_R1,     "PREV / NEXT" },
+            { BTN_UP,     "VOL+" },
+            { BTN_DOWN,   "VOL-" },
+            { BTN_LEFT,   "REW" },
+            { BTN_RIGHT,  "FF" },
+            { BTN_L1,     "PREV" },
+            { BTN_R1,     "NEXT" },
+            { BTN_SQUARE, "SUBS" },
+            { BTN_TRIANGLE, "WIND" },
+            { BTN_OPTIONS, "SET" },
+            { BTN_R3,     "EQ" },
             { BTN_CIRCLE, "BACK" },
         };
 
-        hint_row(r, DESIGN_W/2, top + 152, vid,
+        hint_row(r, DESIGN_W/2, top + 150, vid,
                  (int)(sizeof(vid)/sizeof(vid[0])));
     }
 
     if (m->video_settings_open)
         video_settings_panel(r, m);
+    if (m->eq_open)
+        eq_overlay(r, m);
+}
+
+/* ------------------------------------------------------------- sections -- */
+
+/* Blits a texture into a design-space box, honouring the fit mode, and clips
+ * it to that box so a FILL crop cannot paint over the panel around it. */
+static void blit_fit(SDL_Renderer *r, SDL_Texture *tex, int tw, int th, int mode,
+                     const SDL_Rect *src, int bx, int by, int bw, int bh,
+                     SDL_Rect *out)
+{
+    SDL_Rect box, dst;
+    int      sw = src ? src->w : tw;
+    int      sh = src ? src->h : th;
+
+    box.x = px(bx); box.y = py(by);
+    box.w = px(bw); box.h = py(bh);
+    dst   = box;
+
+    if (mode != UI_ASPECT_STRETCH && sw > 0 && sh > 0) {
+        double sa    = (double)sw / (double)sh;
+        double scale = (mode == UI_ASPECT_FILL)
+                     ? (box.w / (double)sw > box.h / (double)sh
+                        ? box.w / (double)sw : box.h / (double)sh)
+                     : (box.w / (double)sw < box.h / (double)sh
+                        ? box.w / (double)sw : box.h / (double)sh);
+
+        dst.w = (int)((double)sw * scale + 0.5);
+        dst.h = (int)((double)sh * scale + 0.5);
+        if (dst.w < 1) dst.w = 1;
+        if (dst.h < 1) dst.h = 1;
+        (void)sa;
+        dst.x = box.x + (box.w - dst.w) / 2;
+        dst.y = box.y + (box.h - dst.h) / 2;
+    }
+
+    SDL_RenderSetClipRect(r, &box);
+    SDL_RenderCopy(r, tex, src, &dst);
+    SDL_RenderSetClipRect(r, NULL);
+
+    if (out)
+        *out = dst;
+}
+
+/* The left-hand file list used by the video and picture sections: numbers,
+ * names cut to fit, a tag on the right and ON AIR on the playing row. */
+static void media_list_panel(SDL_Renderer *r, const UiModel *m,
+                             const char *title, const char *tag,
+                             const char *cur_label)
+{
+    const int x = SAFE_X, y = 180, w = 640, h = 760;
+    const int row_h = 78, rows_visible = 7;
+    const int list_x = x + 28, list_w = w - 56;
+    const int first_row_y = y + 122;
+    int i, shown = 0, first = 0;
+    char head[64];
+
+    col(r, C_PANEL);
+    round_rect(r, x, y, w, h, 22);
+
+    snprintf(head, sizeof(head), "%s    %d", title, m->track_count);
+    text_at(r, list_x, y + 40, 2, head, C_DIM);
+    col(r, C_LINE);
+    rect(r, list_x, y + 88, list_w, 2);
+
+    if (m->selected >= rows_visible)
+        first = m->selected - rows_visible + 1;
+    if (first > m->track_count - rows_visible)
+        first = m->track_count - rows_visible;
+    if (first < 0) first = 0;
+
+    for (i = first; i < m->track_count && shown < rows_visible; i++, shown++) {
+        int  ry = first_row_y + shown*row_h;
+        int  is_sel = (i == m->selected);
+        int  is_cur = (i == m->current);
+        int  tag_w  = text_width(tag, 2);
+        int  cur_w  = is_cur ? text_width(cur_label, 2) + 24 : 0;
+        int  tr, tg, tb;
+        char name[96], num[16];
+
+        if (is_sel) {
+            col(r, C_PANEL_HI);
+            round_rect(r, list_x, ry, list_w, row_h - 12, 14);
+            col(r, C_ACCENT);
+            round_rect(r, list_x, ry, 8, row_h - 12, 4);
+        }
+
+        snprintf(num, sizeof(num), "%02d", i + 1);
+        text_at(r, list_x + 28, ry + 24, 2, num,
+                is_sel ? C_ACCENT_R : C_FAINT_R,
+                is_sel ? C_ACCENT_G : C_FAINT_G,
+                is_sel ? C_ACCENT_B : C_FAINT_B);
+
+        fit_text(name, sizeof(name), m->tracks[i].name,
+                 list_w - 104 - 28 - tag_w - 20 - cur_w, 2);
+        tr = is_cur ? C_ACCENT2_R : (is_sel ? C_TEXT_R : C_DIM_R);
+        tg = is_cur ? C_ACCENT2_G : (is_sel ? C_TEXT_G : C_DIM_G);
+        tb = is_cur ? C_ACCENT2_B : (is_sel ? C_TEXT_B : C_DIM_B);
+        text_at(r, list_x + 104, ry + 24, 2, name, tr, tg, tb);
+
+        if (is_cur)
+            text_right(r, list_x + list_w - 28 - tag_w - 24, ry + 24, 2,
+                       cur_label, C_ACCENT2);
+        text_right(r, list_x + list_w - 28, ry + 24, 2, tag, C_FAINT);
+    }
+
+    if (m->track_count == 0)
+        text_center(r, x + w/2, y + h/2 - 20, 2, "NOTHING HERE", C_DIM);
+}
+
+/* The source rectangle of a zoomed picture: the visible slice of the texture,
+ * moved by the right stick. Pan is stored as -1000..1000 across the overhang
+ * so it survives the picture being a different size. */
+static SDL_Rect picture_src(const UiModel *m, int tw, int th)
+{
+    SDL_Rect s;
+    int      z  = m->pic_zoom < 100 ? 100 : (m->pic_zoom > 400 ? 400 : m->pic_zoom);
+
+    s.x = 0; s.y = 0; s.w = tw; s.h = th;
+    if (z > 100 && tw > 0 && th > 0) {
+        int sw = tw * 100 / z;
+        int sh = th * 100 / z;
+        int mx = (tw - sw) / 2;
+        int my = (th - sh) / 2;
+
+        if (sw < 1) sw = 1;
+        if (sh < 1) sh = 1;
+        s.w = sw;
+        s.h = sh;
+        s.x = mx + m->pic_pan_x * mx / 1000;
+        s.y = my + m->pic_pan_y * my / 1000;
+        if (s.x < 0) s.x = 0;
+        if (s.y < 0) s.y = 0;
+        if (s.x > tw - sw) s.x = tw - sw;
+        if (s.y > th - sh) s.y = th - sh;
+    }
+    return s;
+}
+
+/* --------------------------------------------------------------- home ---- */
+
+static void home_icon(SDL_Renderer *r, int kind, int x, int y, int size, int on)
+{
+    if (kind == 0) {                    /* music: bars */
+        int i;
+
+        for (i = 0; i < 5; i++) {
+            int bh = size * (34 + (i*23) % 56) / 100;
+
+            if (on) col(r, C_ACCENT2);
+            else    col(r, C_FAINT);
+            round_rect(r, x + i*size/6, y + size - bh, size/9 + 8, bh, 6);
+        }
+    } else if (kind == 1) {             /* videos: a play mark in a frame */
+        if (on) col(r, C_ACCENT);
+        else    col(r, C_FAINT);
+        round_rect(r, x, y + size/8, size, size*3/4, 14);
+        col(r, 16, 20, 30);
+        round_rect(r, x + 10, y + size/8 + 10, size - 20, size*3/4 - 20, 10);
+        if (on) col(r, C_ACCENT2);
+        else    col(r, C_TEXT);
+        dtri(r, x + size/2, y + size/2, size*38/100, BTN_RIGHT);
+    } else if (kind == 2) {             /* pictures: frame, sun, hills */
+        if (on) col(r, C_ACCENT);
+        else    col(r, C_FAINT);
+        round_rect(r, x, y + size/8, size, size*3/4, 12);
+        col(r, 16, 20, 30);
+        rect(r, x + 9, y + size/8 + 9, size - 18, size*3/4 - 18);
+        if (on) col(r, C_ACCENT2);
+        else    col(r, C_TEXT);
+        ddisc(r, x + size*2/3, y + size*3/8, size/11);
+        rect(r, x + 14, y + size/2 + 6, size/3, size/7);
+        rect(r, x + size/2, y + size/2, size/3, size/4);
+    } else {                            /* browse: a folder */
+        if (on) col(r, C_ACCENT);
+        else    col(r, C_FAINT);
+        round_rect(r, x, y + size/6, size/2, size/6, 6);
+        round_rect(r, x, y + size/4, size, size/2, 10);
+        col(r, 16, 20, 30);
+        round_rect(r, x + 10, y + size/4 + 10, size - 20, size/2 - 20, 6);
+    }
+}
+
+static void home_screen(SDL_Renderer *r, const UiModel *m)
+{
+    const int cw = 842, ch = 290, gap = 40;
+    const int x0 = SAFE_X, y0 = 260;
+    const int x1 = SAFE_X + cw + gap, y1 = y0 + ch + gap;
+    static const char *const k_title[4] = {
+        "MUSIC", "VIDEOS", "PICTURES", "BROWSE FILES"
+    };
+    static const char *const k_note[4] = {
+        "SONGS, WITH VISUALIZATIONS AND THE EQUALIZER",
+        "MP4 AND MOV, WITH A LIVE PREVIEW ON THE RIGHT",
+        "JPEG, PNG AND BMP, WITH ZOOM AND PICTURE SETTINGS",
+        "EVERY DRIVE AND FOLDER ON THE CONSOLE",
+    };
+    int counts[4];
+    int i;
+
+    header(r, m);
+    text_at(r, SAFE_X, 190, 4, "WHAT DO YOU WANT TO PLAY?", C_TEXT);
+
+    counts[0] = m->music_count;
+    counts[1] = m->video_count;
+    counts[2] = m->picture_count;
+    counts[3] = -1;
+
+    for (i = 0; i < 4; i++) {
+        int  x = (i & 1) ? x1 : x0;
+        int  y = (i >> 1) ? y1 : y0;
+        int  sel = (i == m->home_selected);
+        char count[64];
+
+        if (sel) col(r, C_PANEL_HI);
+        else     col(r, C_PANEL);
+        round_rect(r, x, y, cw, ch, 24);
+        if (sel) {
+            col(r, C_ACCENT);
+            round_rect(r, x, y, cw, 6, 3);
+        }
+        home_icon(r, i, x + cw - 180, y + 78, 120, sel);
+
+        text_at(r, x + 48, y + 48, 4, k_title[i],
+                sel ? C_TEXT_R : C_DIM_R,
+                sel ? C_TEXT_G : C_DIM_G,
+                sel ? C_TEXT_B : C_DIM_B);
+        text_at(r, x + 48, y + 122, 1, k_note[i], C_FAINT);
+
+        if (counts[i] >= 0)
+            snprintf(count, sizeof(count), "%d ITEM%s", counts[i],
+                     counts[i] == 1 ? "" : "S");
+        else
+            snprintf(count, sizeof(count), "DRIVES AND FOLDERS");
+        text_at(r, x + 48, y + 196, 2, count,
+                sel ? C_ACCENT2_R : C_FAINT_R,
+                sel ? C_ACCENT2_G : C_FAINT_G,
+                sel ? C_ACCENT2_B : C_FAINT_B);
+    }
+
+    /* which skin is on, right under the headline */
+    {
+        char theme[64];
+
+        snprintf(theme, sizeof(theme), "THEME   %s",
+                 m->theme_name ? m->theme_name : "ORIGINAL");
+        text_right(r, DESIGN_W - SAFE_X, 196, 2, theme, C_ACCENT2);
+    }
+
+    {
+        static const UiHint home_hints[] = {
+            { BTN_CROSS,  "OPEN" },
+            { BTN_SQUARE, "THEME" },
+            { BTN_OPTIONS, "FILES" },
+            { BTN_L3,     "MUTE" },
+            { BTN_R3,     "EQUALIZER" },
+        };
+
+        hint_row(r, DESIGN_W/2, DESIGN_H - 112, home_hints,
+                 (int)(sizeof(home_hints)/sizeof(home_hints[0])));
+    }
+}
+
+/* -------------------------------------------------------------- videos --- */
+
+void ui_draw_video_section(SDL_Renderer *r, SDL_Texture *frame, int fw, int fh,
+                           const UiModel *m, int w, int h)
+{
+    const int vx = 768, vy = 180, vw = 1056, vh = 760;
+    const int ix = 788, iy = 200, iw = 1016, ih = 560;
+    int  frac = 0;
+    char pos[24], dur[24], name[128];
+
+    if (w > 0) s_w = w;
+    if (h > 0) s_h = h;
+    s_scale = (double)s_w / (double)DESIGN_W;
+
+    /* The two opaque panels this screen paints over the room: the file list
+     * (media_list_panel()) and the viewer. Keep their insets in step. */
+    s_bg_holes = 0;
+    bg_hole(SAFE_X, 180, 640, 760, 22);
+    bg_hole(vx,     vy,  vw,  vh,  22);
+    background(r);
+    header(r, m);
+    media_list_panel(r, m, "VIDEOS", "VIDEO",
+                     m->playing ? "ON AIR" : "PAUSED");
+
+    col(r, C_PANEL);
+    round_rect(r, vx, vy, vw, vh, 22);
+
+    /* the preview viewer: a black plate, then the frame inside it */
+    col(r, 5, 7, 11);
+    rect(r, ix, iy, iw, ih);
+
+    if (frame && fw > 0 && fh > 0) {
+        SDL_Rect dst;
+
+        blit_fit(r, frame, fw, fh, m->video_aspect, NULL, ix, iy, iw, ih, &dst);
+        brightness_veil(r, &dst, m->video_brightness);
+    } else {
+        text_center(r, ix + iw/2, iy + ih/2 - 20, 2,
+                    "SELECT A VIDEO TO PREVIEW", C_FAINT);
+    }
+
+    /* With nothing loaded the caption names the highlighted row, which is the
+     * file Cross will open - not a dead "NO VIDEO". */
+    if (m->have_track && m->tracks && m->current >= 0 &&
+        m->current < m->track_count)
+        fit_text(name, sizeof(name), m->tracks[m->current].name, iw, 3);
+    else if (m->tracks && m->selected >= 0 && m->selected < m->track_count)
+        fit_text(name, sizeof(name), m->tracks[m->selected].name, iw, 3);
+    else
+        snprintf(name, sizeof(name), "NO VIDEO");
+    text_at(r, ix, vy + 604, 3, name, C_TEXT);
+
+    if (m->duration_sec > 0.0) {
+        frac = (int)(m->elapsed_sec / m->duration_sec * 1000.0);
+        if (frac < 0)    frac = 0;
+        if (frac > 1000) frac = 1000;
+    }
+    bar(r, ix, vy + 704, iw, 12, (float)frac / 1000.0f, C_ACCENT);
+
+    fmt_time(pos, sizeof(pos), m->elapsed_sec);
+    fmt_time(dur, sizeof(dur), m->duration_sec);
+    text_at(r, ix, vy + 726, 2, pos, C_DIM);
+    text_right(r, ix + iw, vy + 726, 2, dur, C_DIM);
+    if (m->format_note)
+        text_center(r, ix + iw/2, vy + 724, 1, m->format_note, C_ACCENT);
+    if (m->have_track && !m->playing)
+        text_right(r, ix + iw, vy + 668, 2, "PAUSED", C_ACCENT2);
+
+    {
+        /* Cross always picks the highlighted file here: pausing belongs to
+         * the full-screen player, where Cross is the only play key. */
+        const UiHint vid[] = {
+            { BTN_CROSS,    "PLAY" },
+            { BTN_L1,       "PREV" },
+            { BTN_R1,       "NEXT" },
+            { BTN_TRIANGLE, "FULL SCREEN" },
+            { BTN_OPTIONS,  "SETTINGS" },
+            { BTN_R3,       "EQUALIZER" },
+            { BTN_CIRCLE,   "BACK" },
+        };
+
+        hint_row(r, DESIGN_W/2, DESIGN_H - 112, vid,
+                 (int)(sizeof(vid)/sizeof(vid[0])));
+    }
+
+    draw_toast(r, m->video_toast, m->video_toast_alpha);
+
+    if (m->video_settings_open)
+        video_settings_panel(r, m);
+    if (m->eq_open)
+        eq_overlay(r, m);
+}
+
+/* ------------------------------------------------------------ pictures --- */
+
+static const char *const k_rotation_names[4] = { "0", "90", "180", "270" };
+
+/* The settings are a card that floats over the right edge of the section, the
+ * way the equalizer does, instead of taking a column away from the photo: the
+ * photo keeps the whole window and the card is sized to the view it sits on -
+ * large over the full-screen photo, proportionate over the windowed preview. */
+static void picture_settings_panel(SDL_Renderer *r, const UiModel *m, int big)
+{
+    const int w = big ? 760 : 560;
+    const int h = big ? 800 : 760;
+    const int x = DESIGN_W - SAFE_X - w;
+    const int y = big ? 132 : 180;
+    const int pad = big ? 48 : 28;
+    const int ttl = big ? 3 : 2;
+    const int row_y = y + (big ? 160 : 150);
+    const int row_h = big ? 74 : 72;
+    const int foot  = y + h - (big ? 96 : 86);
+    int i;
+
+    /* a soft drop shadow so the card reads as floating over the photo */
+    round_rect_a(r, x + 14, y + 18, w, h, 22, 0, 0, 0, 120);
+    col(r, 13, 17, 26);
+    round_rect(r, x, y, w, h, 22);
+    col(r, C_ACCENT);
+    round_rect(r, x, y, 6, h, 3);        /* the edge that faces the photo */
+
+    col(r, C_LINE);
+    rect(r, x + pad, y + (big ? 144 : 122), w - 2*pad, 2);
+
+    text_at(r, x + pad, y + (big ? 40 : 34), ttl, "PICTURE SETTINGS", C_TEXT);
+    /* Two short lines rather than a row of chips: five chips with their labels
+     * underneath are wider than this column. They sit clear of the rule below
+     * them, which used to strike through the second line. */
+    text_at(r, x + pad, y + (big ? 92 : 78), 1,
+            "UP / DOWN  CHOOSE A ROW", C_DIM);
+    text_at(r, x + pad, y + (big ? 114 : 98), 1,
+            "LEFT / RIGHT  CHANGE IT", C_DIM);
+
+    for (i = 0; i < UI_PIC_ROWS; i++) {
+        int         ry = row_y + i * row_h;
+        int         sel = (i == m->pic_settings_row);
+        const char *label = "";
+        char        value[96];
+
+        switch (i) {
+        case UI_PIC_ROW_FIT:
+            label = "ASPECT";
+            snprintf(value, sizeof(value), "%s", k_aspect_names[m->pic_fit]);
+            break;
+        case UI_PIC_ROW_BRIGHTNESS:
+            label = "BRIGHTNESS";
+            snprintf(value, sizeof(value), "%+d", m->pic_brightness);
+            break;
+        case UI_PIC_ROW_SATURATION:
+            label = "COLOR";
+            snprintf(value, sizeof(value), "%d%%", m->pic_saturation);
+            break;
+        case UI_PIC_ROW_SHARPNESS:
+            label = "SHARPNESS";
+            snprintf(value, sizeof(value), "%d%%", m->pic_sharpness);
+            break;
+        case UI_PIC_ROW_ROTATION:
+            label = "ROTATION";
+            snprintf(value, sizeof(value), "%s DEG",
+                     k_rotation_names[m->pic_rotation & 3]);
+            break;
+        case UI_PIC_ROW_ZOOM:
+            label = "ZOOM";
+            snprintf(value, sizeof(value), "%d%%", m->pic_zoom);
+            break;
+        default:
+            label = "COLOR ORDER";
+            snprintf(value, sizeof(value), "%s",
+                     m->pic_rb_swap ? "SWAPPED" : "NORMAL");
+            break;
+        }
+
+        if (sel) {
+            col(r, C_PANEL_HI);
+            round_rect(r, x + 12, ry, w - 24, row_h - 10, 14);
+            col(r, C_ACCENT);
+            round_rect(r, x + 12, ry, 6, row_h - 10, 3);
+        }
+
+        text_at(r, x + pad + 12, ry + 28, 2, label,
+                sel ? C_TEXT_R : C_DIM_R, sel ? C_TEXT_G : C_DIM_G,
+                sel ? C_TEXT_B : C_DIM_B);
+
+        {
+            int vright = x + w - pad - (sel ? 22 : 0);
+            int vw = text_width(value, 2);
+
+            text_right(r, vright, ry + 28, 2, value,
+                       sel ? C_ACCENT2_R : C_TEXT_R,
+                       sel ? C_ACCENT2_G : C_TEXT_G,
+                       sel ? C_ACCENT2_B : C_TEXT_B);
+            if (sel) {
+                text_at(r, vright - vw - 28, ry + 28, 2, "<", C_ACCENT2);
+                text_at(r, vright + 6, ry + 28, 2, ">", C_ACCENT2);
+            }
+        }
+    }
+
+    text_at(r, x + pad, foot, 1, "COLOR GOES TO 250%", C_DIM);
+    text_at(r, x + pad, foot + 26, 1, "SHARPNESS 0 LEAVES IT ALONE", C_DIM);
+    text_at(r, x + pad, foot + 52, 1, "CIRCLE DONE  R3 ZOOMS", C_DIM);
+}
+
+/* Draws the photo into the viewer box, or over the whole screen when the
+ * user asked for full screen. */
+static void picture_draw(SDL_Renderer *r, SDL_Texture *tex, int tw, int th,
+                         const UiModel *m, int bx, int by, int bw, int bh)
+{
+    if (tex && tw > 0 && th > 0) {
+        SDL_Rect src = picture_src(m, tw, th);
+
+        blit_fit(r, tex, tw, th, m->pic_fit, &src, bx, by, bw, bh, NULL);
+    } else {
+        text_center(r, px(bx) + px(bw)/2, py(by) + py(bh)/2 - py(30), 2,
+                    m->pic_loaded ? "LOADING..." : "NO PICTURE", C_FAINT);
+        if (m->pic_note)
+            text_center(r, px(bx) + px(bw)/2, py(by) + py(bh)/2 + py(10), 1,
+                        m->pic_note, C_DIM);
+    }
+}
+
+void ui_draw_pictures(SDL_Renderer *r, SDL_Texture *tex, int tw, int th,
+                      const UiModel *m, int w, int h)
+{
+    const int vy = 180, vh = 760;
+    const int vx = 768;
+    int  vw, ix, iy, iw, ih;
+    char name[128], note[96];
+
+    if (w > 0) s_w = w;
+    if (h > 0) s_h = h;
+    s_scale = (double)s_w / (double)DESIGN_W;
+
+    vw = DESIGN_W - SAFE_X - vx;
+    if (vw < 320) vw = 320;
+
+    /* The file list and the viewer are opaque panels over the room. Full
+     * screen paints the whole frame black, so it needs no holes. */
+    s_bg_holes = 0;
+    if (!m->pic_fullscreen) {
+        bg_hole(SAFE_X, 180, 640, 760, 22);
+        bg_hole(vx,     vy,  vw,  vh,  22);
+    }
+    background(r);
+
+    /* Full screen: the photo alone, with a way back. */
+    if (m->pic_fullscreen) {
+        col(r, 0, 0, 0);
+        rect(r, 0, 0, DESIGN_W, DESIGN_H);
+        picture_draw(r, tex, tw, th, m, 0, 0, DESIGN_W, DESIGN_H);
+
+        if (m->pic_name && m->pic_name[0]) {
+            fit_text(name, sizeof(name), m->pic_name, DESIGN_W - 640, 2);
+            round_rect_a(r, 48, 40, text_width(name, 2) + 48, 56, 8,
+                         6, 8, 12, 170);
+            text_at(r, 72, 54, 2, name, C_TEXT);
+        }
+        {
+            static const UiHint fs[] = {
+                { BTN_TRIANGLE, "WINDOW" },
+                { BTN_R3,       "ZOOM" },
+                { BTN_OPTIONS,  "SETTINGS" },
+                { BTN_CIRCLE,   "BACK" },
+            };
+
+            /* a dark strip under the keys: white text on a bright photo was
+             * unreadable in the corners. Wide enough and tall enough for the
+             * emblems and the labels stacked under them. */
+            round_rect_a(r, DESIGN_W/2 - 380, DESIGN_H - 152, 760, 124, 12,
+                         6, 8, 12, 170);
+            hint_row(r, DESIGN_W/2, DESIGN_H - 134, fs,
+                     (int)(sizeof(fs)/sizeof(fs[0])));
+        }
+        /* over the full-screen photo the card is the big one */
+        if (m->pic_settings_open)
+            picture_settings_panel(r, m, 1);
+        if (m->eq_open)
+            eq_overlay(r, m);
+        return;
+    }
+
+    /* The photo keeps the whole window; the settings float over its right
+     * edge instead of pushing it aside. */
+    ix = vx + 20; iy = vy + 20;
+    iw = vw - 40; ih = vh - 60;
+
+    header(r, m);
+    media_list_panel(r, m, "PICTURES", "IMAGE", "VIEWING");
+
+    col(r, C_PANEL);
+    round_rect(r, vx, vy, vw, vh, 22);
+    col(r, 5, 7, 11);
+    rect(r, ix, iy, iw, ih);
+
+    picture_draw(r, tex, tw, th, m, ix, iy, iw, ih);
+
+    /* name plate, inside the picture but out of its way */
+    if (m->pic_name && m->pic_name[0]) {
+        fit_text(name, sizeof(name), m->pic_name, iw - 320, 2);
+        round_rect_a(r, ix + 16, iy + 16, text_width(name, 2) + 32, 52, 8,
+                     6, 8, 12, 190);
+        text_at(r, ix + 32, iy + 28, 2, name, C_TEXT);
+    }
+
+    snprintf(note, sizeof(note), "%s   %d / %d",
+             m->pic_note ? m->pic_note : "", m->selected + 1, m->track_count);
+    round_rect_a(r, ix + iw - text_width(note, 1) - 48, iy + 20,
+                 text_width(note, 1) + 32, 40, 8, 6, 8, 12, 190);
+    text_right(r, ix + iw - 32, iy + 28, 1, note, C_DIM);
+
+    if (m->pic_zoom_mode) {
+        char z[96];
+
+        snprintf(z, sizeof(z), "ZOOM %d%%   RIGHT STICK MOVES   UP / DOWN ZOOMS",
+                 m->pic_zoom);
+        round_rect_a(r, ix + iw/2 - text_width(z, 2)/2 - 24, iy + ih - 68,
+                     text_width(z, 2) + 48, 56, 8, 6, 8, 12, 200);
+        text_center(r, ix + iw/2, iy + ih - 56, 2, z, C_ACCENT2);
+    }
+
+    {
+        const UiHint pics[] = {
+            { BTN_CROSS,    "ZOOM" },
+            { BTN_SQUARE,   "ROTATE" },
+            { BTN_L1,       "PREV" },
+            { BTN_R1,       "NEXT" },
+            { BTN_TRIANGLE, "FULL SCREEN" },
+            { BTN_OPTIONS,  "SETTINGS" },
+            { BTN_R3,       "ZOOM MODE" },
+            { BTN_CIRCLE,   "BACK" },
+        };
+
+        hint_row(r, DESIGN_W/2, DESIGN_H - 112, pics,
+                 (int)(sizeof(pics)/sizeof(pics[0])));
+    }
+
+    if (m->pic_settings_open)
+        picture_settings_panel(r, m, 0);
+    if (m->eq_open)
+        eq_overlay(r, m);
+}
+
+/* L3 in the music section: the visualization on the whole screen. It is the
+ * same drawing code in a bigger box, with the track, the clock and the keys
+ * around it - not a second implementation that could drift from the small one.
+ * The equalizer opens over it exactly as it opens over the library. */
+void ui_draw_visualizer_full(SDL_Renderer *r, const UiModel *m, int w, int h)
+{
+    const int vx = 140, vy = 268, vw = DESIGN_W - 280, vh = 560;
+    char name[128], t0[32], t1[32], line[96];
+    int  style = (m->vis_style >= 0 && m->vis_style < VIS_STYLE_COUNT)
+               ? m->vis_style : VIS_STYLE_SPECTRUM;
+
+    if (w > 0) s_w = w;
+    if (h > 0) s_h = h;
+    s_scale = (double)s_w / (double)DESIGN_W;
+
+    s_bg_holes = 0;
+    background(r);
+    header(r, m);
+
+    if (m->tracks && m->current >= 0 && m->current < m->track_count)
+        fit_text(name, sizeof(name), m->tracks[m->current].name,
+                 DESIGN_W - 640, 3);
+    else
+        snprintf(name, sizeof(name), "NOTHING PLAYING");
+    text_center(r, DESIGN_W/2, 196, 3, name, C_TEXT);
+
+    fmt_time(t0, sizeof(t0), m->elapsed_sec);
+    fmt_time(t1, sizeof(t1), m->duration_sec);
+    snprintf(line, sizeof(line), "%s  /  %s   %s", t0, t1,
+             vis_style_name(style));
+    text_center(r, DESIGN_W/2, 236, 1, line, C_ACCENT);
+
+    visualizer(r, m, vx, vy, vw, vh);
+
+    if (m->duration_sec > 0.5)
+        bar(r, vx, vy + vh + 44, vw, 12,
+            (float)(m->elapsed_sec / m->duration_sec), C_ACCENT);
+
+    {
+        static const UiHint full[] = {
+            { BTN_CROSS,  "PLAY" },
+            { BTN_UP,     "VOL+" },
+            { BTN_DOWN,   "VOL-" },
+            { BTN_L1,     "PREV" },
+            { BTN_R1,     "NEXT" },
+            { BTN_LEFT,   "REW" },
+            { BTN_RIGHT,  "FFWD" },
+            { BTN_TRIANGLE, "VISUAL" },
+            { BTN_L3,     "WINDOW" },
+            { BTN_R3,     "EQUALIZER" },
+            { BTN_CIRCLE, "BACK" },
+        };
+
+        hint_row(r, DESIGN_W/2, DESIGN_H - 112, full,
+                 (int)(sizeof(full)/sizeof(full[0])));
+    }
+
+    /* The volume readout: up and down are volume here, and the same pill the
+     * video screen uses is the only confirmation on screen. */
+    draw_toast(r, m->video_toast, m->video_toast_alpha);
+
+    if (m->eq_open)
+        eq_overlay(r, m);
 }

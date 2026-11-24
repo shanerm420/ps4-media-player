@@ -30,4 +30,17 @@ int  mp3_read(Mp3Source *s, float *out, int max_frames);
 /* Byte-rate estimate of total length; good enough for a progress bar. */
 double mp3_duration_est(const Mp3Source *s);
 
+/* Jumps to sec seconds in: sets the read position to the next frame header at
+ * the byte the file's own bitrate says that time lands on, resets the decoder
+ * and moves the frame counter so the clock and the bar follow the jump.
+ * Returns 0 when the seek happened, negative when there is nothing to seek. */
+int mp3_seek_seconds(Mp3Source *s, double sec);
+
+/* Diagnostics for a file that will not decode: the ID3v2 tag length, the
+ * offset of the first MPEG frame header, and the container guessed from the
+ * first bytes ("mp3", "id3", "aac-adts", "m4a", "wav", "ogg"). */
+size_t      mp3_id3_size(const Mp3Source *s);
+size_t      mp3_first_sync(const Mp3Source *s);
+const char *mp3_container(const Mp3Source *s);
+
 #endif /* MP3_SOURCE_H */

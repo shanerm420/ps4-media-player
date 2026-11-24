@@ -29,6 +29,19 @@ const char *video_format_note(void);      /* "H.264   1920 x 1080" */
 void video_set_paused(int paused);
 void video_seek(double seconds);
 
+/* Picture settings applied while converting: saturation is a percentage (0
+ * greyscale, 100 untouched, 200 vivid) and sharpness 0..100 (0 off). Both
+ * take effect on the next frame, cost nothing when at their defaults, and are
+ * display-side: the decoder's output is never touched. */
+void video_set_picture(int saturation, int sharpness);
+
 const char *video_last_error(void);
+
+/* Measurement helpers for the main loop's perf line: players stopped but not
+ * closed, the size of the RGBA frame buffer, and the decoder's direct-memory
+ * blocks (count and bytes). */
+int                video_left_players(void);
+unsigned long long video_rgba_bytes(void);
+void               video_mem_stats(int *blocks, unsigned long long *bytes);
 
 #endif /* VIDEO_ORBIS_H */

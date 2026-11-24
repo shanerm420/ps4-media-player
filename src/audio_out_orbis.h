@@ -10,6 +10,9 @@
 int  aout_open(int sample_rate, int frames_per_block);
 int  aout_push_s16(const int16_t *pcm);
 int  aout_block_frames(void);
+/* Non-zero once a real port is open. The port already blocks for the length of
+ * a block, so callers must not add their own delay on top of it. */
+int  aout_is_open(void);
 void aout_close(void);
 
 #endif /* AUDIO_OUT_ORBIS_H */

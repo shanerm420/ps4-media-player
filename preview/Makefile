@@ -18,14 +18,16 @@ FONTFLAGS := -DUI_FONT_ATLAS
 
 INCS     := -I$(SDL_ROOT)/usr/include/x86_64-linux-gnu -I$(SDL_ROOT)/usr/include \
             -I../src -I../third_party $(FONTFLAGS)
-LIBS     := -L$(SDL_ROOT)/usr/lib/x86_64-linux-gnu -lSDL2 -lm -Wl,--allow-shlib-undefined
-SRC      := preview.c ../src/ui.c ../src/eq.c ../src/font_atlas.c ../third_party/font8x8.c
+LIBS     := -L$(SDL_ROOT)/usr/lib/x86_64-linux-gnu -lSDL2 -lm -lpthread -Wl,--allow-shlib-undefined
+SRC      := preview.c ../src/ui.c ../src/eq.c ../src/spectrum.c ../src/font_atlas.c ../src/vis_art.c \
+            ../src/appcfg.c ../src/applog.c \
+            ../src/stb_image_impl.c ../src/ps_mark.c ../third_party/font8x8.c
 
 RUNPATH  := $(SDL_ROOT)/usr/lib/x86_64-linux-gnu:$(SDL_ROOT)/usr/lib/x86_64-linux-gnu/pulseaudio
 
 all: build/preview
 
-build/preview: $(SRC) ../src/ui.h ../src/font_atlas.h ../src/font_inter.h
+build/preview: $(SRC) ../src/ui.h ../src/spectrum.h ../src/font_atlas.h ../src/font_inter.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) $(INCS) $(SRC) $(LIBS) -o $@
 
