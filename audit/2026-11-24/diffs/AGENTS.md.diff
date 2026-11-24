@@ -1,0 +1,398 @@
+--- /root/ps4-project/ps4-media-player-backup/audit/2026-11-24/original/AGENTS.md	2026-11-24 02:43:55.000000000 -0500
++++ /root/ps4-project/ps4-media-player-backup/audit/2026-11-24/current/AGENTS.md	2026-11-24 06:44:04.502832510 -0500
+@@ -1,13 +1,3 @@
+-# Working rules — PS4 media player
+-
+-**Read order:** [docs/README.md](docs/README.md) → this file (the rules) → [manifest §2](docs/manifest/02-current-focus.md) → [rule index](docs/rules/README.md) → [manifest §9](docs/manifest/09-ps4-knowledge-base.md) → [history](docs/HISTORY.md).
+-
+-This is the published copy of the rules file. It is regenerated from the
+-project's canonical `AGENTS.md` by `tools/publish-docs.py`; §-references
+-point into the published manifest.
+-
+----
+-
+ # Ultimate PS4 Media Player — working rules and measured facts
+ 
+ Read this before touching anything. It holds the rules, the conventions, the
+@@ -15,8 +5,8 @@
+ chat. If something here conflicts with a new instruction, the new instruction
+ wins and this file is updated to match.
+ 
+-**Read order:** `files/STATUS.html` (state in one screen) → `MANIFEST.md` [§2](docs/manifest/02-current-focus.md)
+-(where we are) → this file (the rules) → `MANIFEST.md` [§9](docs/manifest/09-ps4-knowledge-base.md) (the knowledge) →
++**Read order:** `files/STATUS.html` (state in one screen) → `MANIFEST.md` §2
++(where we are) → this file (the rules) → `MANIFEST.md` §9 (the knowledge) →
+ `HISTORY.md` (why it happened). Nothing later in that order overrides anything
+ earlier.
+ 
+@@ -28,7 +18,7 @@
+ SDL/PS4 facts, build commands, and the full plan text. The two never contradict
+ each other; both are updated together.
+ 
+-**[§12](docs/manifest/12-ps4-development-standard-merged-2026-11-24.md) is the PS4 development standard, merged 2026-11-24** and applying to every
++**§12 is the PS4 development standard, merged 2026-11-24** and applying to every
+ job under this project, not only the player: merge rules and priority order,
+ the startup checklist, the plan template, the reference-source order, the extra
+ protected files, the working method for graphics work, and its conflicts with
+@@ -37,7 +27,7 @@
+ 
+ ## Graphics standard (standing requirement, added 2026-11-23)
+ 
+-From the owner, and part of the main goal — see `MANIFEST.md` [§1](docs/manifest/01-main-goal.md) for the verbatim
++From the owner, and part of the main goal — see `MANIFEST.md` §1 for the verbatim
+ text and the five ways it must be carried out. In short: every visualizer must
+ look as good as this console can make it (native resolution, steady frame rate,
+ smooth motion, bloom, glow, depth, particles, lighting, shaders where the
+@@ -48,7 +38,7 @@
+ 
+ Engineering consequences for this file:
+ 
+-- The "our own rasterizer, no shaders" decision in `MANIFEST.md` [§5](docs/manifest/05-decisions.md) is **under
++- The "our own rasterizer, no shaders" decision in `MANIFEST.md` §5 is **under
+   review**, not settled. Do not cite it as a reason to avoid a GPU path.
+ - Eighteen styles exist (`vis_style_name()` in `src/spectrum.c`). Any claim about
+   "the visualizers" means all eighteen.
+@@ -64,7 +54,7 @@
+   `PS4-OpenGNM/opengnm`, then the experimental stacks. Smallest working sample
+   first, nothing integrated into the app until one runs on the console. The
+   index of candidates, and which lines are unverified search snippets, is
+-  `MANIFEST.md` [§9](docs/manifest/09-ps4-knowledge-base.md).
++  `MANIFEST.md` §9.
+ - Do not add module-loading guesses (`libScePigletv2VSH.sprx`,
+   `libSceShaccVSH.sprx`) to the app: run the sample and read what the console
+   says.
+@@ -72,7 +62,7 @@
+   spectrum bands, per-band beats with a ~150 ms refractory and geometric decay,
+   interpolation between audio packets, automatic gain, and a MilkDrop-style
+   warp-feedback effect once a GPU path exists.
+-- **Check `MANIFEST.md` [§9](docs/manifest/09-ps4-knowledge-base.md) *Graphics principles* before any graphics change.** It
++- **Check `MANIFEST.md` §9 *Graphics principles* before any graphics change.** It
+   holds the loop (five-phrasing research, hypothesis, test in its own package,
+   console measurement, written rule) and every rule established so far with its
+   status: measured, researched only, or assumed. Host numbers rank approaches;
+@@ -99,8 +89,8 @@
+   should never need a follow-up question to act on it.
+ - **Fold owner statements in without being asked.** Anything the owner says that
+   bears on the build, on this console, on the toolchain, or on a future project
+-  goes into the matching `MANIFEST.md` section on arrival: a fact into [§9](docs/manifest/09-ps4-knowledge-base.md), a
+-  console behaviour into [§7](docs/manifest/07-environment.md), a rejection into [§5](docs/manifest/05-decisions.md), a failure into [§6](docs/manifest/06-problems-and-fixes.md), a number into
++  goes into the matching `MANIFEST.md` section on arrival: a fact into §9, a
++  console behaviour into §7, a rejection into §5, a failure into §6, a number into
+   the Graphics principles table with measured / researched-only / assumed attached.
+   Record the date and that the owner stated it. Contradictions keep both readings
+   plus a note on how to test them; never overwrite one silently. Filter by
+@@ -113,7 +103,7 @@
+   one; every technical question is answered from the manifest instead. When the
+   owner asks to be consulted, state each option with its cost and what it unlocks.
+ - **Keep going without asking for a start.** A round that is already written into
+-  `MANIFEST.md` [§11](docs/manifest/11-next-steps.md) is authorized: build it, test it, package it, log it, back it
++  `MANIFEST.md` §11 is authorized: build it, test it, package it, log it, back it
+   up, and hand over the console steps in the same reply. Do not end a reply
+   waiting for "shall I begin the next round". Stop and ask what the next move is
+   only when the next step genuinely needs the owner — a console run or pulled
+@@ -134,7 +124,7 @@
+   between measured options. A failed build is a lead, not a question.
+ - **Existing work is a starting point, not a tutorial.** If a project already
+   solved it, use their answer or their code's approach instead of re-deriving it,
+-  and name the project in `MANIFEST.md` [§8](docs/manifest/08-resources.md). Write it fresh only if nothing
++  and name the project in `MANIFEST.md` §8. Write it fresh only if nothing
+   suitable or licence-clean exists, or if their solution demonstrably fails on
+   this console — and record that reason before starting. This covers redundant
+   *work*, not only redundant questions: a round and a console run spent
+@@ -144,12 +134,12 @@
+   the same turn — do not leave the old wording standing and contradict it
+   elsewhere. Each amendment records the date, the wording before, the wording
+   now, and the evidence; the old text moves to a one-line "superseded" note in
+-  [§6](docs/manifest/06-problems-and-fixes.md) or the build log. **Stricter is automatic; weaker needs the owner's yes**
++  §6 or the build log. **Stricter is automatic; weaker needs the owner's yes**
+   for anything protecting files, data, legality or build stability. Ambiguous
+   evidence keeps both readings, marked `contested`, with the test that settles
+-  it. The register of amendments is `MANIFEST.md` [§9](docs/manifest/09-ps4-knowledge-base.md).
++  it. The register of amendments is `MANIFEST.md` §9.
+ - **Reflect on the manifest before every step and check the step against it
+-  (R26).** Before a build, run, research task or report line: reread [§2](docs/manifest/02-current-focus.md)/[§6](docs/manifest/06-problems-and-fixes.md)/[§8](docs/manifest/08-resources.md)/[§9](docs/manifest/09-ps4-knowledge-base.md),
++  (R26).** Before a build, run, research task or report line: reread §2/§6/§8/§9,
+   `PIGLET-NOTES.md` and the amendments, then name the recorded fact the step tests
+   and what is new. Answer already there: cite it, spend nothing. Step already in
+   the plan: drop it. Every build, every future project.
+@@ -236,7 +226,7 @@
+   say plainly which numbers are PC preview only.
+ - PC numbers are a ranking, not a forecast: the console runs the same software
+   path about **4× slower** than the host, and every frame waits on the display,
+-  so frame times come out as whole multiples of 16.7 ms. Report console results ([§9](docs/manifest/09-ps4-knowledge-base.md))
++  so frame times come out as whole multiples of 16.7 ms. Report console results (§9)
+   in milliseconds **and** in vsyncs (100.1 ms = 6).
+ - No speedup claim without a measurement.
+ - Do not make anything more than ~20% slower at the default step without
+@@ -245,20 +235,18 @@
+ 
+ ## Rules G1–G10 (full text)
+ 
+-Moved here from `MANIFEST.md` [§12](docs/manifest/12-ps4-development-standard-merged-2026-11-24.md) on 2026-11-24: rules live in the rules file, and the
++Moved here from `MANIFEST.md` §12 on 2026-11-24: rules live in the rules file, and the
+ manifest cites their ids instead of restating them. This file does not exceed 640 lines (G9). These rules apply to every job under this project; each says how it is
+ satisfied and what evidence proves it, and where a number is needed and none has been
+ measured the rule says so instead of inventing one.
+ 
+ These are the eight items above turned into things that can be followed and
+-checked. They are **new rules, appended**, not a rewrite of anything in [§12](docs/manifest/12-ps4-development-standard-merged-2026-11-24.md), and
++checked. They are **new rules, appended**, not a rewrite of anything in §12, and
+ they apply to every job under this project from now on. Each says how it is
+ satisfied and what evidence proves it; where a number is needed and none has
+ been measured, the rule says so instead of inventing one.
+ 
+-### G1 — Memory budget per subsystem, stated in every plan
+-
+-A plan is not
++**G1 — Memory budget per subsystem, stated in every plan.** A plan is not
+ complete until it names a ceiling for each part that allocates: UI and canvas,
+ decoder buffers, effects and intermediate targets, and headroom. The ceilings
+ must sum to no more than **60% of the direct pool**, so a job cannot pass its
+@@ -270,9 +258,7 @@
+ corrected by measurement**: UI and canvas 25%, decoder 40%, effects 20%,
+ headroom 15%. Nothing may quote those four numbers as measured.
+ 
+-### G2 — Crash and hang runbook
+-
+-In order, before any investigation: (1) is the
++**G2 — Crash and hang runbook.** In order, before any investigation: (1) is the
+ package still the one you meant — check the MD5; (2) pull the log and read the
+ **last** ten lines, not the first — a stage marker with no successor names the
+ step that stopped; (3) is it a hang or a crash — a hang keeps the last frame and
+@@ -280,12 +266,10 @@
+ (4) remove one variable (another file, another look, another quality step) and
+ re-run once, not five times; (5) reinstall the previous package to confirm the
+ console is still healthy, which separates our fault from the console's; (6) only
+-then write the cause into [§6](docs/manifest/06-problems-and-fixes.md). Never debug on the console by repeatedly
++then write the cause into §6. Never debug on the console by repeatedly
+ reinstalling: one variable per run, and the log decides.
+ 
+-### G3 — A fixed benchmark, compared rather than re-derived
+-
+-One benchmark,
++**G3 — A fixed benchmark, compared rather than re-derived.** One benchmark,
+ unchanged between rounds: the host preview `seq` over the named looks at the
+ three quality steps, three runs, plus `one-shot.bmp` MD5s for the pixels. Numbers
+ and MD5s go in `files/bench/<version>.txt` and a round states the delta against
+@@ -293,56 +277,44 @@
+ `files/bench` line is not finished. The console remains the decider; the
+ benchmark exists so the console run is the only expensive measurement.
+ 
+-### G4 — Input latency, target two frames, not yet measured here
+-
+-Poll-to-photon for one
++**G4 — Input latency, target two frames, not yet measured here.** Poll-to-photon for one
+ button is part of any round that touches input: press a button that changes
+ something visible, capture at high frame rate or read the log's own frame
+ indices, and state the delay in frames. Target: **two frames or fewer** at the
+ step the console runs. If a change buys frame time by adding a frame of delay,
+ that is a loss and it is logged as one.
+ 
+-### G5 — Thermals and sustained clocks
+-
+-Any run longer than five minutes states
++**G5 — Thermals and sustained clocks.** Any run longer than five minutes states
+ whether the last minute was slower than the first. Compare the first and last
+ sixty seconds of frame times from one log; a drop over 5% is recorded as a
+-sustained-clock question in [§10](docs/manifest/10-open-questions.md), not smoothed away. Until a console reading settles it,
++sustained-clock question in §10, not smoothed away. Until a console reading settles it,
+ long-run numbers are quoted with their position in the run. The 5% threshold is an assumed starting point, not a console
+ finding.
+ 
+-### G6 — `config.ini` migration, never a silent reset
+-
+-Renaming or removing a key
++**G6 — `config.ini` migration, never a silent reset.** Renaming or removing a key
+ keeps the old name readable as an alias for one version, logs
+ `config key renamed <old> -> <new>`, and leaves the owner's value in place. A key
+ that is removed is logged as ignored, not dropped without a word. The startup
+ line `config loaded … (N keys, M missing, B bad, U unknown)` is the check: `bad`
+ and `unknown` rising is a migration bug in our code, not a user error.
+ 
+-### G7 — A clean-room note per borrowed idea
+-
+-Whenever a reference shapes
+-something, one line goes into [§8](docs/manifest/08-resources.md): the technique, the reference, and what was
+-written here independently. Original code is not negotiable ([§12](docs/manifest/12-ps4-development-standard-merged-2026-11-24.md) legal), and
++**G7 — A clean-room note per borrowed idea.** Whenever a reference shapes
++something, one line goes into §8: the technique, the reference, and what was
++written here independently. Original code is not negotiable (§12 legal), and
+ this is the record that proves it was.
+ 
+-### G8 — "Professional" defined so it can be failed, from the v112 and v115 console runs
+-
+-At 1080p: a visualizer
++**G8 — "Professional" defined so it can be failed, from the v112 and v115 console runs.** At 1080p: a visualizer
+ holds **≤ 50 ms (3 vsyncs)** at the step the console actually runs, and draws at
+ **no less than 1640x560** for the look box before any step-down — the box size
+ the console already uses. Any look that cannot hold both states which one it
+-trades and why, in [§6](docs/manifest/06-problems-and-fixes.md). Chrome and menus hold **≤ 33.4 ms (2 vsyncs)** — already
++trades and why, in §6. Chrome and menus hold **≤ 33.4 ms (2 vsyncs)** — already
+ measured on the music list. These are ceilings, not goals: a look that meets them
+ is finished even if it could be prettier, and a look that misses them is not
+ finished even if it looks good.
+ 
+-### G9 — The rules core has a size ceiling
+-
+-`AGENTS.md` **must not grow past its
++**G9 — The rules core has a size ceiling.** `AGENTS.md` **must not grow past its
+ **640 lines** (635 when these rules were added on 2026-11-24, the plan text included, so the five lines of headroom are not an invitation) and this file's rules
+-sections ([§5](docs/manifest/05-decisions.md), [§11](docs/manifest/11-next-steps.md)'s reply rules, [§12](docs/manifest/12-ps4-development-standard-merged-2026-11-24.md)) must not grow past 900. The target is
++sections (§5, §11's reply rules, §12) must not grow past 900. The target is
+ smaller: 400 lines of rules, reached the first time the plan text is touched, by
+ moving that text to an appendix with a pointer. History, evidence and the knowledge base are not
+ counted and may grow without limit. When a rules section would pass its ceiling,
+@@ -350,25 +322,23 @@
+ never weakened, just out of the way of the rules somebody has to read before
+ starting work. A rules file nobody finishes reading protects nothing.
+ 
+-### G10 — A new project starts its own file, and links back
+-
+-Anything that is
++**G10 — A new project starts its own file, and links back.** Anything that is
+ not the media player — a game, a tool, a port — gets its own `AGENTS.md` and
+ manifest that inherit the ten rules above and this project's evidence standard,
+ and that do **not** inherit Liquid's water bands. The shared core stays here;
+ the new file holds only its own facts. Before the first build, the new project
+-reports the startup checklist ([§12](docs/manifest/12-ps4-development-standard-merged-2026-11-24.md)) against its own file.
++reports the startup checklist (§12) against its own file.
+ 
+ ### Amendments (A-numbered)
+ 
+ The register of rules that later evidence changed. The rule now reads as amended and
+ the old wording is kept here so a future reader can see what moved and why; the
+-manifest [§9](docs/manifest/09-ps4-knowledge-base.md) points here.
++manifest §9 points here.
+ 
+ **A1 — per-pass `glFinish` as a GPU timing method.** *Before:* "per-pass timings
+ are GPU-side: `glFinish()` at every pass boundary" — implying a finish per pass
+ returns that pass's GPU cost. *After:* `glFinish()` per pass costs **~13–14 ms
+-regardless of pass size** (a 480x270 pass measured 14.6 ms against 18.3 ms for ([§9](docs/manifest/09-ps4-knowledge-base.md))
++regardless of pass size** (a 480x270 pass measured 14.6 ms against 18.3 ms for (§9)
+ 1920x1080), so it measures the round trip, not the work; only whole-frame timing
+ is trustworthy, and cost is established by **differencing configurations**
+ (BREW00098's A–E), with timer queries as the alternative when the entry points
+@@ -389,14 +359,14 @@
+ **A3 — treating a difference between configs as the cost.** *Before:* "cost is
+ established by **differencing configurations** (BREW00098's A–E), with timer
+ queries as the alternative when the entry points exist". *After:* differencing
+-only sees work larger than the present floor ([§9](docs/manifest/09-ps4-knowledge-base.md) R20) — `A empty` measured
+-8.19 ms and `B scene`, a 1080p ramp plus 2,000 sprites, measured 8.32 ms ([§9](docs/manifest/09-ps4-knowledge-base.md) R20), which
+-is the flip and not the draw ([§6](docs/manifest/06-problems-and-fixes.md)). Cost is measured by **repetition slope**: run N
++only sees work larger than the present floor (§9 R20) — `A empty` measured
++8.19 ms and `B scene`, a 1080p ramp plus 2,000 sprites, measured 8.32 ms (§9 R20), which
++is the flip and not the draw (§6). Cost is measured by **repetition slope**: run N
+ passes per frame at N = 1, 4, 16, fit the line, and read the slope; the
+ intercept is the floor and is reported separately. Differencing stays valid only
+ where the work clearly exceeds the floor. *Evidence:* `gpu-bloom98.log`
+-2026-11-24: `CONFIG empty frames=120 ms=8.19 fps=122.1` ([§9](docs/manifest/09-ps4-knowledge-base.md) R20) and
+-`CONFIG scene … ms=8.32` ([§9](docs/manifest/09-ps4-knowledge-base.md) R20), then config C died. *Status:* measured on this console; rule R20.
++2026-11-24: `CONFIG empty frames=120 ms=8.19 fps=122.1` (§9 R20) and
++`CONFIG scene … ms=8.32` (§9 R20), then config C died. *Status:* measured on this console; rule R20.
+ 
+ **A4 — "the type was wrong" read from the console's log.** *Before:* A2 concluded
+ `u_blurRadius` is `FLOAT_VEC2` and "is set with `glUniform2f`". *After:* the driver
+@@ -434,15 +404,15 @@
+ - The SDL-PS4 software renderer **queues** draw commands; `SDL_RenderFlush` runs them (`SDL_FillRects`, `SDL_BlendFillRects`, `SDL_BlitSurface`, `SDL_BlitScaled`). Source: OpenOrbis/SDL-PS4 `src/render/SDL_render.c`, `src/render/software/SDL_render_sw.c`.
+ - **Measured on hardware (v112), and this corrects the line above:** the
+   look's own rasterization lands in `paint` (16-40 ms at step 3), and `flush`
+-  has a floor of **21.6-24.5 ms on every screen**, including a music list that ([§9](docs/manifest/09-ps4-knowledge-base.md))
++  has a floor of **21.6-24.5 ms on every screen**, including a music list that (§9)
+   draws almost nothing (`paint=0.9`, `flush=24.3`). That floor is the
+   full-frame canvas copy into the 24-bit window surface, so the queue is
+   already drained inside `paint` (the texture upload forces an early flush)
+   and `flush` is mostly the copy plus chrome. A video frame under the canvas
+-  raises it to ~29-37 ms; video drawn on its own (no canvas) costs 1.4 ms. ([§9](docs/manifest/09-ps4-knowledge-base.md))
++  raises it to ~29-37 ms; video drawn on its own (no canvas) costs 1.4 ms. (§9)
+ - The window surface the renderer draws into is created as 24-bit
+   **`SDL_PIXELFORMAT_BGR888`**; presenting (`SDL_UpdateWindowSurface` →
+-  `PS4_UpdateWindowFramebuffer`) memsets the whole 8.3 MB video-out buffer, ([§9](docs/manifest/09-ps4-knowledge-base.md))
++  `PS4_UpdateWindowFramebuffer`) memsets the whole 8.3 MB video-out buffer, (§9)
+   copies rows at 4 bytes per pixel, then submits a flip and **waits for it**
+   (`sceVideoOutSubmitFlip` + `sceVideoOutWaitVblank`/equeue). Source:
+   OpenOrbis/SDL-PS4 `src/video/ps4/SDL_ps4video.c`.
+@@ -529,13 +499,13 @@
+ 
+ 1. Visualizer frames sit at **62-82 ms (4-5 vsyncs, 12-16 fps)** at step 3 on
+    the console; the fast looks reach 50-60 ms (3-3.5 vsyncs). Rave improved to
+-   66.7 ms (4 vsyncs) from the ~100 ms (6 vsyncs) it ran at step 2 in v111. ([§9](docs/manifest/09-ps4-knowledge-base.md))
+-2. The canvas copy in the present path costs **21.6-24.5 ms on every screen**, ([§9](docs/manifest/09-ps4-knowledge-base.md))
++   66.7 ms (4 vsyncs) from the ~100 ms (6 vsyncs) it ran at step 2 in v111. (§9)
++2. The canvas copy in the present path costs **21.6-24.5 ms on every screen**, (§9)
+    even one that draws nothing, so no screen can exceed 30 fps until the
+    present path changes. At step 3 the frame splits roughly: rasterizer 16-40,
+    copy 22, present 4-18.
+-3. NEON is the outlier: 116.8 ms (7 vsyncs) for a 2.5-minute stretch in the ([§9](docs/manifest/09-ps4-knowledge-base.md))
+-   first session with `flush=72.2` (three times the copy floor), but 70.1 ms in ([§9](docs/manifest/09-ps4-knowledge-base.md))
++3. NEON is the outlier: 116.8 ms (7 vsyncs) for a 2.5-minute stretch in the (§9)
++   first session with `flush=72.2` (three times the copy floor), but 70.1 ms in (§9)
+    the second session. Unexplained; needs one focused re-test.
+ 4. The ladder does not climb back within a look (see the ladder fact above),
+    so after the first drop everything runs at step 3 for the rest of the
+@@ -547,8 +517,8 @@
+    list: it is the room being re-baked for the next skin. The log shows paint
+    435 ms with an unchanged flush on a screen whose paint was 0.9 ms a frame,
+    and the startup bake measures the same 441 ms. Fixed in v115 and **confirmed
+-   on hardware 2026-11-23**: forty-odd SQUARE presses, no frame over 50.1 ms, ([§9](docs/manifest/09-ps4-knowledge-base.md))
+-   `worst_paint` 18.5 ms, `paint` 9.2–11.8 ms while a bake was in progress on ([§9](docs/manifest/09-ps4-knowledge-base.md))
++   on hardware 2026-11-23**: forty-odd SQUARE presses, no frame over 50.1 ms, (§9)
++   `worst_paint` 18.5 ms, `paint` 9.2–11.8 ms while a bake was in progress on (§9)
+    every one of those frames.
+ 7. Liquid: the flat cyan body, the vertical bands and the empty top third are
+    addressed in v113 (see the Round 3 notes). Hardware numbers say the change is
+@@ -558,7 +528,7 @@
+    Crest and foam line are good — they were not touched, keep them that way.
+    Nothing named for this look is still open; what remains would be new work
+    (a ripple on the glass, spray hitting the pane, reflected room detail).
+-   **On the console it settles at step 2, 15 fps** (66.7 ms a frame, paint ([§9](docs/manifest/09-ps4-knowledge-base.md))
++   **On the console it settles at step 2, 15 fps** (66.7 ms a frame, paint (§9)
+    33.4): the ladder stops there because step 2 is judged against
+    `quality.budget_ms` (88 ms) and 66.7 is under it — it only drops to step 3
+    below ~11 fps. Step 3 would give 20 fps on a third of the canvas;
+@@ -588,11 +558,11 @@
+   waiting on the console. It is never hand-edited; `make check` fails when it
+   is older than the files it summarises. Read it first, then the block below.
+ - **Where we are is updated on every event, not every round.** The block at the
+-  top of `MANIFEST.md` [§2](docs/manifest/02-current-focus.md) is the single answer to "where is this project now":
++  top of `MANIFEST.md` §2 is the single answer to "where is this project now":
+   latest player build and MD5, latest GPU package and MD5, what is built and not
+   run, what has run on the console, the blocking question, who unblocks it, the
+   next action and the last console-verified date. Edit it in the same turn as any
+-  build, package, console run or log read; put history in [§4](docs/manifest/04-build-log.md) and knowledge in [§9](docs/manifest/09-ps4-knowledge-base.md),
++  build, package, console run or log read; put history in §4 and knowledge in §9,
+   never in the block. `tools/check-manifest.py` fails when it names an older
+   package than the newest in `files/`.
+ 
+@@ -602,7 +572,7 @@
+ 
+ ## State
+ 
+-State lives in `MANIFEST.md` [§2](docs/manifest/02-current-focus.md); round history in `ROUND-NOTES.md`.
++State lives in `MANIFEST.md` §2; round history in `ROUND-NOTES.md`.
+ 
+ ## Console log facts worth remembering
+ 
+@@ -614,12 +584,12 @@
+   change, not subtitles; the video had been stopped 7 s earlier.
+ - v115 hosts the fix for that: the bake is sliced (`BG_JOB_MS`, 12 ms a frame)
+   and the outgoing skin keeps drawing until the new one is ready. On the host
+-  the worst frame of a skin change went 110.9 -> 19.1 ms with identical output. ([§9](docs/manifest/09-ps4-knowledge-base.md))
++  the worst frame of a skin change went 110.9 -> 19.1 ms with identical output. (§9)
+ - The console runs **GoldHEN v2.4b18.14** (PS4 Pro, 12.52): FTP 2121, payload
+   server 9090, klog 3232, packages installed from `/data/pkg`. The GitHub
+   release page still lists 2.4b18 and firmware only to 11.00 and is therefore
+   wrong for this machine; the details and the source disagreements are in
+-  `MANIFEST.md` [§9](docs/manifest/09-ps4-knowledge-base.md).
++  `MANIFEST.md` §9.
+ - **Package builds are not byte-reproducible.** `eboot.bin` embeds `__DATE__`
+   and `__TIME__`, so identical source builds two different pkgs and `cmp`
+   between them always differs. An MD5 identifies a build, not a source state;
+@@ -643,7 +613,7 @@
+   `GL_SHADING_LANGUAGE_VERSION: OpenGL ES GLSL ES 2.0`.
+ - **Limits:** max texture 4096, max renderbuffer 4096, viewport 4096x4096,
+   config count 30 (the sample's own `eglChooseConfig` returns 1).
+-- **Present:** 3,300 frames in 27.5 s = 119.9 fps, about 8.3 ms, on a textured ([§9](docs/manifest/09-ps4-knowledge-base.md))
++- **Present:** 3,300 frames in 27.5 s = 119.9 fps, about 8.3 ms, on a textured (§9)
+   quad. The sample does not wait for vsync; do not read that as a budget for a
+   real look.
+ - **Capabilities that matter here:** float textures and float/half-float linear

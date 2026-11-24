@@ -1,0 +1,92 @@
+--- /root/ps4-project/ps4-media-player-backup/audit/2026-11-24/original/docs/HISTORY.md	2026-11-24 02:43:55.000000000 -0500
++++ /root/ps4-project/ps4-media-player-backup/audit/2026-11-24/current/docs/HISTORY.md	2026-11-24 06:44:05.426832510 -0500
+@@ -1,12 +1,3 @@
+-# Build history
+-
+-The dated log: what was built, what ran on the console,
+-what the log said. Read it when you need to know *why* a rule exists.
+-
+-[Back to the index](README.md).
+-
+----
+-
+ # PS4 media player — build history
+ 
+ Extracted verbatim from `MANIFEST.md` §4 on 2026-11-24, when that section had grown
+@@ -1353,3 +1344,76 @@
+   the console card reads §2's own next action, and the predictions are parsed out
+   of `APPENDIX-LOGS.md`. A board that names a finished run as the thing being
+   waited for is worse than no board — it is the first thing anyone reads.
++
++
++## Build log - moved from `MANIFEST.md` §4 (2026-11-24)
++
++Kept verbatim. The spine now carries only the present (§2) and the decisions
++(§5); this is the dated record, oldest first, as it was written.
++
++## 4. Build log
++
++Moved to `files/HISTORY.md` on 2026-11-24: the log had grown to 827 lines and was
++crowding out the rules and the current state. The full entries — quoted log lines,
++MD5s, source hashes, decisions and corrections — live there, verbatim and in date
++order. This section is only the ledger, so a reader sees what happened without
++loading the history.
++
++| Date | Entry |
++|---|---|
++| 2026-11-23 | v113 (Liquid: water body, depth, framing) |
++| 2026-11-23 | v114 (Liquid: glass, floor, spray, glint) |
++| 2026-11-23 | v115 (the 467 ms freeze on Square) |
++| 2026-11-23 | manifest: environment closed, GoldHEN and FTP researched |
++| 2026-11-23 | v116 (glint, spray, floor — the three look tweaks) |
++| 2026-11-23 | on hardware: the freeze, and Liquid's step |
++| 2026-11-23 | manifest merge: the graphics standard becomes part of the goal |
++| 2026-11-23 | manifest: GPU paths, console facts, techniques, and other players |
++| 2026-11-23 | GPU path test: the piglet sample, built and packaged |
++| 2026-11-23 | v117 (header overlap) and the video/audit analysis |
++| 2026-11-23 | GPU test v2: a log written with kernel calls |
++| 2026-11-23 | GPU test v3: the stage log (the one to run) |
++| 2026-11-23 | the Piglet v3 log read: the GPU path is confirmed |
++| 2026-11-23 | the v117 log read: nothing regressed, the header needs the screen |
++| 2026-11-23 | manifest sync: graphics principles and the three rounds |
++| 2026-11-23 | v118 (logging only) built |
++| 2026-11-23 | Round 2 started, and stopped at the shader gate |
++| 2026-11-23 | the shader catalogue package (BREW00094) built |
++| 2026-11-23 | GNM checked, and the 60 fps skeleton written |
++| 2026-11-23 | manifest: owner statements are folded in automatically |
++| 2026-11-24 | the catalogue log read: a bloom chain CAN be assembled |
++| 2026-11-24 | GPU Bloom POC built (BREW00095, no player version) |
++| 2026-11-24 | the bloom log: the chain compiles, then dies at the first frame |
++| 2026-11-24 | BLOOM 2 built (BREW00096): per-call error tagging |
++| 2026-11-24 | the BLOOM 2 log: the chain runs, 85–100 fps, and the timings are not GPU timings |
++| 2026-11-24 | BLOOM 3 built (BREW00097): sample draw out, GPU timings, real workload |
++| 2026-11-24 | the BLOOM 3 log: my measurement is the bottleneck, and a uniform bug broke the blur |
++| 2026-11-24 | other Piglet projects consulted, then BLOOM 4 built (BREW00098) |
++| 2026-11-24 | R32 adopted: owner authorised scoped build rounds; dated backups under _scratch/backups/ are the revert path (hashes recorded in RELAY.md) |
++
++## Carried from other PS4 homebrew - evicted from `MANIFEST.md` §9 (20261124-1113)
++
++```
++### Carried from other PS4 homebrew (`researched only`; text in `PIGLET-NOTES.md`)
++
++Interval 0 is right for vsync; a `gde` app gets ~768 MiB direct and ~255 MiB
++flexible, not 4.6 GB; shader compiles 110-260 ms and uncacheable; no
++`glBlitFramebuffer`, 16-bit offscreen depth. Vsync was never the probe's problem
++- `eglSwapInterval(display, 0)` is already in the sample
++(`PigletApplication.cpp:182`) - so BREW00102's 16.66 ms with no present is still
++open and BREW00103 measures it with the GPU clock.
++```
++
++
++## Who has already solved what - evicted from `MANIFEST.md` §9 (20261124-1113)
++
++```
++### Who has already solved what (2026-11-24)
++
++Look for the existing answer first (R25, R26); findings, not code, in
++**`PIGLET-NOTES.md`**. `alechurri/shipofharkinian-ps4` `docs/TECHNICAL.md` is the
++best public Piglet write-up (`eglSwapInterval` trap, ~768/255 MiB memory,
++110-260 ms shader compiles, no `glBlitFramebuffer`, `struct stat` bug, `EINVAL`
++paths); `Navinas3460/Stremio-PS4` is a video app on this stack; `shadPS4` has the
++display contract; the ES2 spec has the uniform rule A5 cost two runs to learn.
++```
