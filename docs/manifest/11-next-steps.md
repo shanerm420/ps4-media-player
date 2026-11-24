@@ -142,7 +142,7 @@ amendment (A-number) if it moves a rule.
 |---|---|---|---|
 | P1 | `A empty` (clear + swap) lands at **8–10 ms**, because the swap alone measured 8.3 ms in the v3 sample and nothing else draws | under 6 ms (the swap is not what we think) or over 14 ms (something else is pacing) | **hit** — 8.19 ms for 120 frames |
 | P2 | `B−A` (ramp + 2,000 sprites at 1080p into the half-float target) is **4–8 ms** | over 14 ms (a 1080p fill that heavy would make a 60 fps look impossible on this path) | **void, not a miss** — 0.13 ms, because both A and B sat on the 8.3 ms present floor; the method, not the model, was wrong ([§6](06-problems-and-fixes.md)) |
-| P3 | `C−B` (bright, blur1, blur2, composite at 480x270) is **1–3 ms** | over 6 ms (bloom is then too expensive to use everywhere) | not run — C died on `glUniform2f` ([§6](06-problems-and-fixes.md)) |
+| P3 | `C−B` (bright, blur1, blur2, composite at 480x270) is **1–3 ms** | over 6 ms (bloom is then too expensive to use everywhere) | **missed, on the cheap side** — BREW00102 bounds one chain under ~0.5 ms by the CPU window; the estimate was 2-6x too pessimistic, and the GPU-clock run (BREW00103) is what would replace the bound with a figure |
 | P4 | `D−C` (4,000 extra sprites) is **1–3 ms**, i.e. sprites scale roughly linearly | flat 0 ms (the sprite draw is not the cost) or over 6 ms (vertex-bound already) | not run |
 | P5 | `E−C` (960x540 bloom targets instead of 480x270) costs **+1–3 ms**, i.e. bloom is fill-bound at its target size | flat 0 ms (bloom is fixed-overhead bound, which changes the tuning plan) | not run |
 | P0 | **All five configs report `err=0x0000`** after the vec2 fix (A2) | any non-zero error voids that config's number and the run | **MISSED** — `[PIG]E-glUniform2f:8390 - illegal to set uniform data with different types`, then `glViewport failed: 502` |
@@ -170,7 +170,16 @@ rollback. Nothing in Round 2 may start from assumptions about this log.
 - Console steps go in the round report: which file to open, what to play, how
   long to wait, which log to pull, and what to look for in it.
 
-### Round 2 — GPU proof of concept
+### Round 2 — GPU proof of concept — **effect proven 2026-11-24, cost bounded**
+
+Status, before the plan text below: the bloom chain was built and run in its own
+packages (BREW00094 to BREW00103), it draws on the console, and the numbers say
+one chain is under about 0.5 ms by the CPU bound - a six-pass chain at most ~3 ms
+of a 16.7 ms frame (R24/A6, [§9](09-ps4-knowledge-base.md) A6). What is **not** proven is the look port and
+SDL/Piglet surface sharing, which Round 3 needs. The bullets below are kept as the
+plan that produced it, with one correction: the logging rule is now R22 - **one**
+sink in `/data/Alpha PS4 test kit/`, not one at `/data` and one in the player's
+folder.
 
 - A **separate package with its own title id**, built from the OpenOrbis 0.5.2
   Piglet sample. It never replaces the player, changes no player source, and

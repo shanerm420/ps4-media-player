@@ -19,7 +19,7 @@ knowledge in [§9](09-ps4-knowledge-base.md); this block is only ever the presen
 | Next action | run **v118** (`files/Ultimate-Media-Player-v118.pkg`, MD5 `349943cbd65ddb1580a9e47aec7de1b0`) and pull `app.log`: the `video: SRC` / `video: RATE` / `pull_rounds` lines are the only way to settle the 16 fps question |
 | Reflection (R26/R27) | Before that run: **already recorded** - the 16.7 ms display step, the uniform binding, vsync, packaging, logs, the module load, the memory class, the blob set ([§7](07-environment.md) settled list). **Genuinely new** - the file's codec, rate, duration and bitrate, and whether the `??????` names arrive mangled or the font lacks glyphs. Both need this console and no source has them |
 | Last console-verified | 2026-11-24, the BREW00102 log (GPU) and v117 (player) |
-| Published | `shanerm420/ps4-media-player` — docs tree and `AGENTS.md` on `main`, tag `docs-2026-11-24`, CI `docs` green, verified file for file 2026-11-24 |
+| Published | `shanerm420/ps4-media-player` — docs tree and `AGENTS.md` on `main`, tag `docs-2026-11-24-0114`, CI `docs` green, verified against GitHub 2026-11-24 (source not yet published - see below) |
 
 **Focus: the GPU is reachable. Piglet ES2 runs on this console.** The v3 stage
 log answered everything it was built for on the first run, and went past the
