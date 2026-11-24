@@ -18,7 +18,7 @@ ec6ff218f00b815397a0952e03f1c651  docs/amendments/A3.md
 4d98b26aeaf637bdf433f702925f2e01  docs/amendments/A5.md
 7d1fb2e98c82ebbb33ae86a74ef08f65  docs/amendments/README.md
 ae64daeee6b2fc59732abe2d3c2ab803  docs/manifest/01-main-goal.md
-e65c356801b58852177ebcc6787186d0  docs/manifest/02-current-focus.md
+426e1b92bd0bf844fd1aabb9e2b2058b  docs/manifest/02-current-focus.md
 fda84a209e7eab1d880f7ef2266d029c  docs/manifest/03-roadmap.md
 0148a8a66b474ed44d5e23e3a80c1744  docs/manifest/04-build-log.md
 6c729f618de95727998848af4531532d  docs/manifest/05-decisions.md
