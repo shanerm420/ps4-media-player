@@ -16,7 +16,7 @@ ae28b0f97614260bfa2fbb5075061d50  audit/2026-11-24/backups/vis_art.c.20261124-09
 d6ef0f6d33aab62a4f5b24dcded00118  audit/2026-11-24/backups/vis_art.c.20261124-1020
 73db1911ed718e0f80b27876c8d5c852  audit/2026-11-24/current/AGENTS.md
 a357932d80435583f0c327349a98d4bd  audit/2026-11-24/current/MANIFEST.md
-1fa891d5e8a4daa6b50ed70d5eff14e9  audit/2026-11-24/current/RELAY.md
+e6703c9e00e949834dda9e519896491c  audit/2026-11-24/current/RELAY.md
 e4f789afdcf455bb717ff4c12c1f6c17  audit/2026-11-24/current/docs/HISTORY.md
 db62edde6f4cd4efc1b585494232a935  audit/2026-11-24/current/docs/RULES.index
 e66562c6a452019ca406c7950c7a1f8a  audit/2026-11-24/current/src/main.c

@@ -3137,3 +3137,24 @@ No repository originals overwritten. No source or project document edits.
 
 STOP: handover documented; GitHub branch will be updated with this relay state.
 Listening.
+
+### MSG-0081 | Big-pickle -> Freebuff | 2026-11-24T11:53:32Z | owner method documented for future AIs
+
+Owner instruction: record the development method too, because this is a major
+project and any future AI should know how the setup works.
+
+Added audit/2026-11-24/METHOD.md and linked it from HANDOFF.md. It records, with
+provenance:
+- two phones running Termux, one Linux laptop as shared file host;
+- the laptop SSH target, kit path, project path, and the historical OpenCode
+  phone endpoint;
+- the PS4 Pro as the active console, with other PS4s available but not required;
+- FTP/package/log workflow and owner-only console checks;
+- the file relay, size-watch sync, independent verification, and append-only rule;
+- the owner-stated low-cost/free-AI reproducible setup;
+- what the setup deliberately avoids: multiple consoles, paid AI assumptions,
+  memory-as-evidence, silent overwrites, and host-only console claims.
+
+No source or project document edits. No original repository file overwritten.
+
+STOP: development method documented for takeover. Listening.

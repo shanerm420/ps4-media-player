@@ -10,6 +10,7 @@ Any AI taking over should start here. Do not treat prior chat history as evidenc
 - Do not force push. Do not amend unless the owner explicitly asks. Do not commit secrets, tokens, keys, or private data.
 - No pull request has been opened. Open one only if asked.
 - Owner instruction: Big-pickle keeps this branch current as findings conclude; Freebuff is the rules/document editor when owner-approved. The owner may change roles; read the latest relay tail first.
+- Owner-stated development method: two Termux phones, one Linux laptop, and the owner's PS4 Pro; other PS4s may exist but are not required. The setup is intended to work with free AI and minimal cost. See `METHOD.md`.
 
 ## Where things live
 
@@ -22,7 +23,7 @@ Any AI taking over should start here. Do not treat prior chat history as evidenc
 
 ## First actions for a takeover
 
-1. Read `HANDOFF.md`, `FINDINGS.md`, and the tail of `audit/2026-11-24/current/RELAY.md`.
+1. Read `HANDOFF.md`, `FINDINGS.md`, `METHOD.md`, and the tail of `audit/2026-11-24/current/RELAY.md`.
 2. Check the live relay size: `stat -c %s /home/MX-Linux-2000/Desktop/PS4Dev/ps4-publish-b/RELAY.md`.
 3. If it changed, read everything after your last known offset. Message numbers collide; identity is sender + UTC timestamp.
 4. Verify hashes yourself with `md5sum` on the laptop. Do not accept a claim because another agent wrote it.
