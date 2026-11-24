@@ -1,3 +1,9 @@
+## Documentation
+
+Rules, measured facts and the project's build history live in
+[docs/](docs/README.md). If you are an AI agent, read [AGENTS.md](AGENTS.md)
+first — it states the rules, the read order and what is known versus assumed.
+
 # Ultimate PS4 Media Player
 
 A native PS4 (OpenOrbis) media player. MP3 and MP4/MOV both play: audio goes

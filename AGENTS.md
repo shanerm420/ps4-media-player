@@ -109,9 +109,9 @@ Engineering consequences for this file:
   If it is unclear whether a statement is durable, record it as
   `owner-stated, untested` rather than dropping it. The goal is a knowledge base a
   future app can be built from, not a diary.
-- **Questions are allowed when the owner asks to be consulted.** Then the reply
-  ends with the question, states every option with its cost and what it unlocks,
-  and waits. "End on a proposal, not a question" governs unprompted endings only.
+- **Only visual choices are asked (R30).** A question may only be an aesthetic
+  one; every technical question is answered from the manifest instead. When the
+  owner asks to be consulted, state each option with its cost and what it unlocks.
 - **Keep going without asking for a start.** A round that is already written into
   `MANIFEST.md` [§11](docs/manifest/11-next-steps.md) is authorized: build it, test it, package it, log it, back it
   up, and hand over the console steps in the same reply. Do not end a reply
@@ -148,6 +148,11 @@ Engineering consequences for this file:
   for anything protecting files, data, legality or build stability. Ambiguous
   evidence keeps both readings, marked `contested`, with the test that settles
   it. The register of amendments is `MANIFEST.md` [§9](docs/manifest/09-ps4-knowledge-base.md).
+- **Reflect on the manifest before every step and check the step against it
+  (R26).** Before a build, run, research task or report line: reread [§2](docs/manifest/02-current-focus.md)/[§6](docs/manifest/06-problems-and-fixes.md)/[§8](docs/manifest/08-resources.md)/[§9](docs/manifest/09-ps4-knowledge-base.md),
+  `PIGLET-NOTES.md` and the amendments, then name the recorded fact the step tests
+  and what is new. Answer already there: cite it, spend nothing. Step already in
+  the plan: drop it. Every build, every future project.
 - Research a PS4 question with several phrasings before trusting an answer (a
   plain question, a technical term, a tool or repository name, an error message,
   a forum or tutorial style), note where sources disagree, prefer official and
@@ -175,6 +180,8 @@ the toolchain). No Sony SDK material of any kind.
 Console data path (all of it user data, never touched by the build):
 `/data/ultimate-ps4-media-player/` — `app.log`, `app.old.log`, `config.ini`,
 `shots/` (v111+ BMP captures).
+Probe and test logs go to **`/data/Alpha PS4 test kit/`** from BREW00101 on: the
+app creates the folder and writes `<name>.log` there, one place to pull from.
 
 ## Hard rules (never break, never "improve")
 
@@ -351,16 +358,12 @@ manifest that inherit the ten rules above and this project's evidence standard,
 and that do **not** inherit Liquid's water bands. The shared core stays here;
 the new file holds only its own facts. Before the first build, the new project
 reports the startup checklist ([§12](docs/manifest/12-ps4-development-standard-merged-2026-11-24.md)) against its own file.
-   as the leftover budget allows.
 
 ### Amendments (A-numbered)
 
 The register of rules that later evidence changed. The rule now reads as amended and
 the old wording is kept here so a future reader can see what moved and why; the
 manifest [§9](docs/manifest/09-ps4-knowledge-base.md) points here.
-
-Each entry is a rule that later evidence changed. The rule now reads as amended;
-the old wording is kept here so a future reader can see what moved and why.
 
 **A1 — per-pass `glFinish` as a GPU timing method.** *Before:* "per-pass timings
 are GPU-side: `glFinish()` at every pass boundary" — implying a finish per pass
@@ -394,6 +397,26 @@ intercept is the floor and is reported separately. Differencing stays valid only
 where the work clearly exceeds the floor. *Evidence:* `gpu-bloom98.log`
 2026-11-24: `CONFIG empty frames=120 ms=8.19 fps=122.1` ([§9](docs/manifest/09-ps4-knowledge-base.md) R20) and
 `CONFIG scene … ms=8.32` ([§9](docs/manifest/09-ps4-knowledge-base.md) R20), then config C died. *Status:* measured on this console; rule R20.
+
+**A4 — "the type was wrong" read from the console's log.** *Before:* A2 concluded
+`u_blurRadius` is `FLOAT_VEC2` and "is set with `glUniform2f`". *After:* the driver
+reports `u_blurRadius type=0x8B50 FLOAT_VEC2 size=1 **loc=49**`, and
+`glUniform2f` **at that same location** is refused with the identical
+`illegal to set uniform data with different types`, while `glUniform1fv` on
+`u_gaussianKernel[0]` (loc=51) answers `Failed to retrieve uniform info`. So the
+**location** the driver returns is not usable by its own setters, and no type
+inference from the log can fix it. The rule is now: probe every set once, at link,
+before any frame is timed; skip a uniform that refuses, and never spend a frame
+discovering it. *Evidence:* `gpu-bloom99.log` 2026-11-24, the `SET`/`UNI` block
+plus three `state=VOID err=0x0502` configurations. *Status:* measured on this console; rule R21. Superseded by A5.
+
+**A5 — setting a uniform on a program that is not bound.** *Before:* A4 said the
+location `glGetUniformLocation` returns "is not usable by its own setters".
+*After:* setters act on the **currently bound** program (ES2 spec) and nothing was
+bound, so every `SET` answered `Invalid program!`; BREW00097-101's "different
+types" was the same mistake (loc 49 on texmap is `u_opacity`, a float). Bind with
+`glUseProgram` first. *Evidence:* `gpu-bloom101.log`, `SET … REFUSED 0x0502` beside
+`[PIG]E-glUniform2f:8372 - Invalid program!`. *Status:* measured; R22; replaces A4.
 
 ## Sources rule
 
@@ -442,7 +465,7 @@ sessions; `$HOME/openorbis` and `$HOME/hostdeps` survive.
 # console (from the project root)
 OO_PS4_TOOLCHAIN=$HOME/openorbis/PS4Toolchain \
 PATH=$HOME/.cache/ps4-toolchain/cc/bin:$PATH \
-make PKG_LD=$HOME/openorbis/ssl11/usr/lib/x86_64-linux-gnu      # → pkg + eboot.bin
+make PKG_LD=$HOME/openorbis/ssl11/usr/lib/x86_64-linux-gnu      # pkg+eboot, gated by check-pkg.py
 
 # if the toolchain is gone: bash ~/bootstrap-toolchain.sh  (~2-4 min, micromamba, clang 18)
 
@@ -573,19 +596,13 @@ worse than none.
   never in the block. `tools/check-manifest.py` fails when it names an older
   package than the newest in `files/`.
 
-## Plan (restored, full text)
+## Plan
 
-The round plan — A3, A4, Stage B–E and the Liquid look items — is kept in
-`files/PLAN.md`. It is a work plan, not a rule: read it when planning a round, not
-before every task. Nothing in it overrides anything in this file.
+The round plan is in `files/PLAN.md`: a work plan, not a rule, overriding nothing.
 
 ## State
 
-The current state is **not** kept here any more. Read the where-we-are block at
-the top of `MANIFEST.md` [§2](docs/manifest/02-current-focus.md): latest player build and MD5, latest GPU package and
-MD5, what is built and not run, what has run on the console, the blocking
-question and the next action. The round history that used to sit in this
-section is in `MANIFEST.md` [§9](docs/manifest/09-ps4-knowledge-base.md) under "Round-state notes carried over".
+State lives in `MANIFEST.md` [§2](docs/manifest/02-current-focus.md); round history in `ROUND-NOTES.md`.
 
 ## Console log facts worth remembering
 

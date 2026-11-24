@@ -3,7 +3,7 @@
   "MANIFEST.md section 9",
   "AGENTS.md G-rules"
  ],
- "count": 30,
+ "count": 40,
  "rules": [
   {
    "id": "G1",
@@ -72,7 +72,7 @@
    "id": "G10",
    "kind": "G",
    "status": "measured",
-   "evidence": "Anything that is\nnot the media player — a game, a tool, a port — gets its own `AGENTS.md` and\nmanifest that inherit the ten rules above and this project's evidence standard,\nand that do **not** inherit Liquid's water bands. The shared core stays here;\nthe new file holds only its own facts. Before the first build, the new project\nreports the startup checklist (§12) against its own file.\n   as the leftover budget allows.\n\n### Amendments (A-numbered)\n\nThe register of rules that later evidence changed. The rule now reads as amended and\nthe old wording is kept here so a future reader can see what moved and why; the\nmanifest §9 points here.\n\nEach entry is a rule that later evidence changed. The rule now reads as amended;\nthe old wording is kept here so a future reader can see what moved and why.\n\n**A1 — per-pass `glFinish` as a GPU timing method.** *Before:* \"per-pass timings\nare GPU-side: `glFinish()` at every pass boundary\" — implying a finish per pass\nreturns that pass's GPU cost. *After:* `glFinish()` per pass costs **~13–14 ms\nregardless of pass size** (a 480x270 pass measured 14.6 ms against 18.3 ms for (§9)\n1920x1080), so it measures the round trip, not the work; only whole-frame timing\nis trustworthy, and cost is established by **differencing configurations**\n(BREW00098's A–E), with timer queries as the alternative when the entry points\nexist. *Evidence:* `gpu-bloom97.log` 2026-11-24, 22 reports; corroborated by the\nvendor-neutral rule that per-pass finishes stall both CPU and GPU. *Status:*\nmeasured on this console; rule R15.\n\n**A2 — `u_blurRadius` typed as a vec4.** *Before:* \"`u_blurRadius type=0x8B50`\n(vec4 — an x/y radius pair with room for two more components)\". *After:*\n`0x8B50` is **`GL_FLOAT_VEC2`**; it is set with `glUniform2f(p, 1/w, 0)` for the\nhorizontal pass and `(0, 1/h)` for the vertical, and a `glUniform4f` is rejected\nwith `illegal to set uniform data with different types`, leaving the uniform and\nthe kernel at their defaults. *Evidence:* `gpu-bloom97.log` 2026-11-24, the\n`[PIG]E-glUniform4f:8900` line plus `CHK pass-blur glerr=0x0502`; the earlier\n`blur1` and `blur2` figures in that run are void because of it. *Status:*\nmeasured on this console; rule R16.\n\n**A3 — treating a difference between configs as the cost.** *Before:* \"cost is\nestablished by **differencing configurations** (BREW00098's A–E), with timer\nqueries as the alternative when the entry points exist\". *After:* differencing\nonly sees work larger than the present floor (§9 R20) — `A empty` measured\n8.19 ms and `B scene`, a 1080p ramp plus 2,000 sprites, measured 8.32 ms (§9 R20), which\nis the flip and not the draw (§6). Cost is measured by **repetition slope**: run N\npasses per frame at N = 1, 4, 16, fit the line, and read the slope; the\nintercept is the floor and is reported separately. Differencing stays valid only\nwhere the work clearly exceeds the floor. *Evidence:* `gpu-bloom98.log`\n2026-11-24: `CONFIG empty frames=120 ms=8.19 fps=122.1` (§9 R20) and\n`CONFIG scene … ms=8.32` (§9 R20), then config C died. *Status:* measured on this console; rule R20.",
+   "evidence": "Anything that is\nnot the media player — a game, a tool, a port — gets its own `AGENTS.md` and\nmanifest that inherit the ten rules above and this project's evidence standard,\nand that do **not** inherit Liquid's water bands. The shared core stays here;\nthe new file holds only its own facts. Before the first build, the new project\nreports the startup checklist (§12) against its own file.\n\n### Amendments (A-numbered)\n\nThe register of rules that later evidence changed. The rule now reads as amended and\nthe old wording is kept here so a future reader can see what moved and why; the\nmanifest §9 points here.\n\n**A1 — per-pass `glFinish` as a GPU timing method.** *Before:* \"per-pass timings\nare GPU-side: `glFinish()` at every pass boundary\" — implying a finish per pass\nreturns that pass's GPU cost. *After:* `glFinish()` per pass costs **~13–14 ms\nregardless of pass size** (a 480x270 pass measured 14.6 ms against 18.3 ms for (§9)\n1920x1080), so it measures the round trip, not the work; only whole-frame timing\nis trustworthy, and cost is established by **differencing configurations**\n(BREW00098's A–E), with timer queries as the alternative when the entry points\nexist. *Evidence:* `gpu-bloom97.log` 2026-11-24, 22 reports; corroborated by the\nvendor-neutral rule that per-pass finishes stall both CPU and GPU. *Status:*\nmeasured on this console; rule R15.\n\n**A2 — `u_blurRadius` typed as a vec4.** *Before:* \"`u_blurRadius type=0x8B50`\n(vec4 — an x/y radius pair with room for two more components)\". *After:*\n`0x8B50` is **`GL_FLOAT_VEC2`**; it is set with `glUniform2f(p, 1/w, 0)` for the\nhorizontal pass and `(0, 1/h)` for the vertical, and a `glUniform4f` is rejected\nwith `illegal to set uniform data with different types`, leaving the uniform and\nthe kernel at their defaults. *Evidence:* `gpu-bloom97.log` 2026-11-24, the\n`[PIG]E-glUniform4f:8900` line plus `CHK pass-blur glerr=0x0502`; the earlier\n`blur1` and `blur2` figures in that run are void because of it. *Status:*\nmeasured on this console; rule R16.\n\n**A3 — treating a difference between configs as the cost.** *Before:* \"cost is\nestablished by **differencing configurations** (BREW00098's A–E), with timer\nqueries as the alternative when the entry points exist\". *After:* differencing\nonly sees work larger than the present floor (§9 R20) — `A empty` measured\n8.19 ms and `B scene`, a 1080p ramp plus 2,000 sprites, measured 8.32 ms (§9 R20), which\nis the flip and not the draw (§6). Cost is measured by **repetition slope**: run N\npasses per frame at N = 1, 4, 16, fit the line, and read the slope; the\nintercept is the floor and is reported separately. Differencing stays valid only\nwhere the work clearly exceeds the floor. *Evidence:* `gpu-bloom98.log`\n2026-11-24: `CONFIG empty frames=120 ms=8.19 fps=122.1` (§9 R20) and\n`CONFIG scene … ms=8.32` (§9 R20), then config C died. *Status:* measured on this console; rule R20.\n\n**A4 — \"the type was wrong\" read from the console's log.** *Before:* A2 concluded\n`u_blurRadius` is `FLOAT_VEC2` and \"is set with `glUniform2f`\". *After:* the driver\nreports `u_blurRadius type=0x8B50 FLOAT_VEC2 size=1 **loc=49**`, and\n`glUniform2f` **at that same location** is refused with the identical\n`illegal to set uniform data with different types`, while `glUniform1fv` on\n`u_gaussianKernel[0]` (loc=51) answers `Failed to retrieve uniform info`. So the\n**location** the driver returns is not usable by its own setters, and no type\ninference from the log can fix it. The rule is now: probe every set once, at link,\nbefore any frame is timed; skip a uniform that refuses, and never spend a frame\ndiscovering it. *Evidence:* `gpu-bloom99.log` 2026-11-24, the `SET`/`UNI` block\nplus three `state=VOID err=0x0502` configurations. *Status:* measured on this console; rule R21. Superseded by A5.\n\n**A5 — setting a uniform on a program that is not bound.** *Before:* A4 said the\nlocation `glGetUniformLocation` returns \"is not usable by its own setters\".\n*After:* setters act on the **currently bound** program (ES2 spec) and nothing was\nbound, so every `SET` answered `Invalid program!`; BREW00097-101's \"different\ntypes\" was the same mistake (loc 49 on texmap is `u_opacity`, a float). Bind with\n`glUseProgram` first. *Evidence:* `gpu-bloom101.log`, `SET … REFUSED 0x0502` beside\n`[PIG]E-glUniform2f:8372 - Invalid program!`. *Status:* measured; R22; replaces A4.",
    "statement": "A new project starts its own file, and links back."
   },
   {
@@ -212,8 +212,78 @@
    "id": "R20",
    "kind": "R",
    "status": "measured",
-   "evidence": "`gpu-bloom98.log`: `CONFIG empty … ms=8.19` and `CONFIG scene … ms=8.32`. The method is repetition slope: run N passes per frame at N = 1, 4, 16, fit the line, read the slope. Differencing stays valid only for work larger than the floor",
+   "evidence": "`gpu-bloom98.log`: `CONFIG empty … ms=8.19` and `CONFIG scene … ms=8.32`. The method is repetition slope: run N passes per frame at N = 1, 4, 16, fit the line, read the slope. Differencing stays valid only for work larger than the floor. The slope is a CPU-side window, so it cannot resolve work below a frame press: [superseded A6]",
    "statement": "**Frame timing here sits on a ~8.3 ms present floor, so differencing two configs cannot see the work** — `A empty` measured 8.19 ms and `B scene` with a 1080p ramp and 2,000 sprites measured 8.32 ms, a 0.13 ms difference for work that cannot plausibly be free; anything drawn under the floor disappears into the flip"
+  },
+  {
+   "id": "R21",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`gpu-bloom99.log`: the `UNI`/`SET` block, then `CONFIG n1/n4/n16 … state=VOID err=0x0502`. Rule: try each set once at link, drain the error, print the result, and skip a uniform that refuses (A4). A skipped uniform leaves the driver's defaults, so the picture is not the intended one but the pass cost is unchanged",
+   "statement": "**A uniform's set must be probed before it is trusted; the location the driver returns is not always accepted by the driver's own setter** — `u_blurRadius` (reported `0x8B50 FLOAT_VEC2`, loc 49) refuses `glUniform2f` at that location with `illegal to set uniform data with different types`, and `u_gaussianKernel[0]` (loc 51) refuses `glUniform1fv` with `Failed to retrieve uniform info`, each leaving sticky `0x0502`"
+  },
+  {
+   "id": "R22",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "One path via `sceKernelMkdir` + retry, then `sceKernelUnlink` over an **exact-name** table (no patterns), logging `CLEAN removed=N refused=M`. The player's `app.log`, `app.old.log`, `config.ini` and `shots/` are never in it",
+   "statement": "**One log, in `/data/Alpha PS4 test kit/`, and delete what earlier builds left** — old builds opened seven sinks at once, so every run scattered copies that had to be deleted by hand"
+  },
+  {
+   "id": "R23",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "`all` depends on `check`: SFO parses, 11 entries, required keys, CONTENT_ID/TITLE_ID match the Makefile, 36-char id, `CNT` magic, not truncated. `make clean` after any interrupted build",
+   "statement": "**No package is handed over until `tools/check-pkg.py` passes it** — BREW00102 installed as Corrupted Data (`CE-33481-9`) then refused to start (`CE-34544-0`): its `param.sfo` had 7 entries of 11, because a killed build left it half-written and `make` kept it"
+  },
+  {
+   "id": "R24",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`gpu-bloom102.log` BREW00102 `CONFIG empty draw_ms=16.656`, `n16 16.659`, `n64 33.340`. Wrap the frame in `GL_TIME_ELAPSED_EXT` via `EXT_disjoint_timer_query` and fit the slope on `gpu_ms`; report a CPU window as \"< one frame\" and name the instrument behind every number",
+   "statement": "**GPU cost comes from the GPU clock; a CPU window is only an upper bound** — draws + `glFinish` with no swap in the window still gave 16.656 ms at N = 0, 16.659 at N = 16, 33.340 at N = 64"
+  },
+  {
+   "id": "R25",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "Order: ES2/EGL spec → this project's §9 facts → `shipofharkinian-ps4`, `Stremio-PS4`, `shadPS4` → a console run. Findings in `PIGLET-NOTES.md`; borrowed ideas get a clean-room note (§8)",
+   "statement": "**Read what other PS4 homebrew and the ES2 spec already solved before a round** — two console runs (A4, A5) went into a uniform question the spec answers in one line"
+  },
+  {
+   "id": "R26",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "Before any build, console run, research task or report step: reread §2, §6, §8, §9, `PIGLET-NOTES.md` and the amendments, and state in one line **which recorded fact the step tests** and **what is genuinely new**. If the answer is already recorded, do not spend the run - cite it instead. If a step duplicates one already in the plan, drop it. Applies to every build and every future project (G10 inherits it); a round that skips this reflection is a defect in the round, whatever the build",
+   "statement": "**Reflect on this manifest before every step, and verify that step against it** — the owner had to point out that BREW00102's timing question was already published (`shipofharkinian-ps4`) and the uniform question was answered by the ES2 spec, after both had been sent to the console as tests; work that repeats a recorded answer is waste, and it is the owner's time being spent"
+  },
+  {
+   "id": "R27",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "Every console request names the one unknown it closes and quotes the recorded fact it does *not* contradict. A run to confirm the display contract, the module load, the memory class, the packaging route, the log path or uniform binding is refused, and the recorded line is cited instead. Hardware questions go to §7 \"settled\" list first; only behaviour absent from it can be tested",
+   "statement": "**The hardware is known: never spend a run on what §7, §9, `PIGLET-NOTES.md` or the measurement rules already settle** — BREW00103 was queued to ask \"why 16.66 ms\" when the measurement rules have said since v112 that every frame waits on the display and lands on whole 16.7 ms multiples; the owner had to say so"
+  },
+  {
+   "id": "R28",
+   "kind": "R",
+   "status": "assumed",
+   "evidence": "One package, no model branches. Every number names the model; a Pro result is an upper bound and the base PS4 is the budget floor. Firmware and GoldHEN are per-console setup, not features of the software",
+   "statement": "**The target is the PS4 family, not this one console** — the work is PS4 software, and PS4 is the common denominator: same OS, same GLES2/Piglet, same audio, video, pad and package interfaces on every model, so working PS4 software runs on all PS4s"
+  },
+  {
+   "id": "R29",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "Before writing anything, look in this order: this repository's own proven code (`src/applog.c`, the UI text renderer, the ladder), the OpenOrbis samples, a licence-clean library, then the published technique - and use it instead of re-deriving it. Write new code only where nothing fits or the licence forbids it, from the documented method and never pasted (G7 clean-room note). Two implementations of one job must name why the second exists, or the second one goes",
+   "statement": "**Do not reproduce a method that already exists - reuse it** — this project has rebuilt things that were already there: a bespoke logger and an on-screen text renderer for every probe while the player already had `applog` and its own text drawing, and a uniform-binding answer the ES2 spec states"
+  },
+  {
+   "id": "R30",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "A question to the owner is allowed only when the answer is a **visual choice** - which look, which palette, sharper or smoother, this layout or that. Anything technical (an API, a driver refusal, a format, a build error, a timing method, a structure, a default value) is resolved from this manifest, `AGENTS.md`, `PIGLET-NOTES.md`, `APPENDIX-LOGS.md`, `ROUND-NOTES.md`, the ES2/EGL spec, the OpenOrbis samples, then other PS4 homebrew - and the answer is written back into the manifest in the same turn, so the next session finds it. If a technical answer genuinely is not in any of those, the fallback is a decision recorded with its reason, not a question. Asking the owner to choose a technical option is a defect in the round. A **console run is not a question**: it is a step that needs their hands, and the reply gives it with the file, MD5, install route, what to do and which lines to send back",
+   "statement": "**Ask the owner only about how it should look; every technical question is answered here and work continues** — the owner's instruction, 2026-11-24: \"the only thing that should be asked is aesthetic questions... if it has to do with programming or coding in any way... refer to the Manifest to find the solution instead of asking the user\""
   }
  ]
 }

@@ -33,37 +33,37 @@ ul { margin:0; padding-left:18px; color:#c4ced8 }
 .big { font-size:15px; margin-top:10px }
 </style></head><body><div class="wrap">
 <h1>Project status — PS4 media player</h1>
-<div class="sub">Generated 2026-11-24 03:19 from the files themselves, by <span class="mono">tools/status.py</span>. Every check below runs on this machine; the console is listed separately because it cannot be reached from here.<br>Read order: this board, then MANIFEST §2, then AGENTS, then MANIFEST §9, then HISTORY. Nothing later overrides anything earlier.</div>
+<div class="sub">Generated 2026-11-24 05:42 from the files themselves, by <span class="mono">tools/status.py</span>. Every check below runs on this machine; the console is listed separately because it cannot be reached from here.<br>Read order: this board, then MANIFEST §2, then AGENTS, then MANIFEST §9, then HISTORY. Nothing later overrides anything earlier.</div>
 <div class="big"><span class="pill" style="background:#2ecc71">all host checks passing</span></div>
 
 <h2>Where we are</h2>
 <div class="cards">
   <div class="card"><div class="k">Latest player build</div><div class="v mono">v118 — `349943cbd65ddb1580a9e47aec7de1b0`</div>
     <div class="what">Piglet sample v3 (GPU confirmed), BREW00094 catalogue (82 blobs), BREW00095 (502 at first frame), BREW00096 (85–100 fps,…</div></div>
-  <div class="card"><div class="k">Latest GPU package</div><div class="v mono">BREW00098 — `a5607cc90de5a17491566a4e949ef4d1`</div>
-    <div class="what">v118</div></div>
-  <div class="card"><div class="k">Blocking question</div><div class="v">What does a 1080p bloom chain cost? BREW00098 could not answer: two of five configs ran and both sat on an 8.3 ms present floor, so the draw cost is hidden behind the flip</div></div>
-  <div class="card"><div class="k">Next action</div><div class="v">build the repetition-slope probe (BREW00099): N passes per frame at N = 1, 4, 16, fit the line, slope is the cost</div></div>
+  <div class="card"><div class="k">Latest GPU package</div><div class="v mono">BREW00103 — `3bde518b33bf17627d5ab559b84f0084`</div>
+    <div class="what">v118; BREW00103</div></div>
+  <div class="card"><div class="k">Blocking question</div><div class="v">**None left for the bloom proof of concept.** It is answered to decision grade: one chain is under half a millisecond by the CPU bound, so a 6-pass chain is at most ~3 ms of a 16.7 ms frame - affordable, whatever the exact figure. What is still open is the *player* side: the video path and the filename logging (v118)</div></div>
+  <div class="card"><div class="k">Next action</div><div class="v">run **v118** (`files/Ultimate-Media-Player-v118.pkg`, MD5 `349943cbd65ddb1580a9e47aec7de1b0`) and pull `app.log`: the `video: SRC` / `video: RATE` / `pull_rounds` lines are the only way to settle the 16 fps question</div></div>
 </div>
 
 <h2>Checks</h2>
-<table><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Rules lint</b><div class="what">sections, rule ids, cross references, MD5s, ceilings</div></td><td class="t">3.2s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Rule index</b><div class="what">29 rules parsed, each status checked against its evidence</div></td><td class="t">0.1s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Checker self-test</b><div class="what">8 injected faults, each one must be caught</div></td><td class="t">0.7s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Player tests</b><div class="what">host-side audio path, no console needed</div></td><td class="t">0.0s</td></tr></table>
+<table><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Rules lint</b><div class="what">sections, rule ids, cross references, MD5s, ceilings</div></td><td class="t">3.0s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Rule index</b><div class="what">29 rules parsed, each status checked against its evidence</div></td><td class="t">0.0s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Checker self-test</b><div class="what">8 injected faults, each one must be caught</div></td><td class="t">0.7s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Player tests</b><div class="what">host-side audio path, no console needed</div></td><td class="t">0.0s</td></tr></table>
 
 <h2>Waiting on the console</h2>
 <table><tr><td class="dot" style="color:#f39c12">●</td>
-<td><b>BREW00098 bloom differential run</b><div class="what">Install from Hdd [hdd:/data/pkg/], run ~2 minutes, pull /data/gpu-bloom98.log over FTP 2121 and drop it in the chat.</div></td>
+<td><b>BREW00103 bloom differential run</b><div class="what">Install from Hdd [hdd:/data/pkg/], run ~2 minutes, pull /data/gpu-bloom98.log over FTP 2121 and drop it in the chat.</div></td>
 <td class="t">waiting</td></tr></table>
 
 <h2>Predictions for that run</h2>
 <table><tr><th>#</th><th>Claim</th><th>Result</th></tr></table>
 
 <h2>Notes</h2>
-<ul><li>cited logs not archived in files/: gpu-bloom.log, gpu-bloom96.log, gpu-bloom97.log, gpu-bloom98.log, gpu-shader-cat.log, piglet-gpu-test-v3.log</li></ul>
+<ul><li>cited logs not archived in files/: gpu-bloom.log, gpu-bloom101.log, gpu-bloom102.log, gpu-bloom96.log, gpu-bloom97.log, gpu-bloom98.log, gpu-bloom99.log, gpu-shader-cat.log, old.log, piglet-gpu-test-v3.log</li></ul>
 
 <h2>Rule index</h2>
-<div class="card"><div class="v">30 rules indexed from the documents, with
+<div class="card"><div class="v">40 rules indexed from the documents, with
 status and evidence — <span class="mono">files/RULES.index</span></div>
-<div class="what">assumed 3, measured 20, procedural 5, researched only 2</div></div>
+<div class="what">assumed 4, measured 23, procedural 11, researched only 2</div></div>
 
 <div class="foot">Every row is produced by running the real checker, not by
 remembering its result. Amber means the system is fine but a fact is unproven.</div>

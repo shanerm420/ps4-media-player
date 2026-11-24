@@ -23,12 +23,16 @@ Nothing later in that order overrides anything earlier.
 
 - [Manifest](manifest/README.md) — 12 parts, from the goal to the
   merged PS4 development standard
-- [Rules](rules/README.md) — 29 rules, each on its own page
+- [Rules](rules/README.md) — every rule, each on its own page
 - [Amendments](amendments/README.md) — rules that later evidence changed
 - [History](HISTORY.md) — the dated build log
 - [Status board](STATUS.html) — generated: every check, the current
   state, what is still waiting on the console
 - [RULES.index](RULES.index) — the same rules, machine-readable
+- [Piglet notes](../PIGLET-NOTES.md) — what other PS4 homebrew already
+  solved, and what is still ours to measure
+- [Round notes](../ROUND-NOTES.md) — the round-by-round history (appendix)
+- [Logging appendix](../APPENDIX-LOGS.md) — the log survey and dead ends
 - [tools](../tools/) — the checkers that keep all of the above consistent
 
 ## Honesty note
