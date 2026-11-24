@@ -127,29 +127,13 @@ a time, each finished and logged before the next starts. The queued features kee
 their place after them, and nothing renders differently until Round 2 is
 approved.
 
-### Predictions register (added 2026-11-24)
+### Predictions register - moved to `APPENDIX-LOGS.md` (2026-11-24)
 
-Before a console run, the expected number is written here — with what would
-falsify it — so the log confirms or refutes a written claim instead of being
-narrated afterwards. A prediction that misses is more useful than one that hits:
-it says the model is wrong while the evidence is still fresh. Verdicts go in the
-`Result` column in the same turn the log is read, and a miss becomes an
-amendment (A-number) if it moves a rule.
-
-**BREW00098 (five configs, 120 frames each, whole-frame timing).**
-
-| # | Claim | Falsified if | Result |
-|---|---|---|---|
-| P1 | `A empty` (clear + swap) lands at **8–10 ms**, because the swap alone measured 8.3 ms in the v3 sample and nothing else draws | under 6 ms (the swap is not what we think) or over 14 ms (something else is pacing) | **hit** — 8.19 ms for 120 frames |
-| P2 | `B−A` (ramp + 2,000 sprites at 1080p into the half-float target) is **4–8 ms** | over 14 ms (a 1080p fill that heavy would make a 60 fps look impossible on this path) | **void, not a miss** — 0.13 ms, because both A and B sat on the 8.3 ms present floor; the method, not the model, was wrong ([§6](06-problems-and-fixes.md)) |
-| P3 | `C−B` (bright, blur1, blur2, composite at 480x270) is **1–3 ms** | over 6 ms (bloom is then too expensive to use everywhere) | **missed, on the cheap side** — BREW00102 bounds one chain under ~0.5 ms by the CPU window; the estimate was 2-6x too pessimistic, and the GPU-clock run (BREW00103) is what would replace the bound with a figure |
-| P4 | `D−C` (4,000 extra sprites) is **1–3 ms**, i.e. sprites scale roughly linearly | flat 0 ms (the sprite draw is not the cost) or over 6 ms (vertex-bound already) | not run |
-| P5 | `E−C` (960x540 bloom targets instead of 480x270) costs **+1–3 ms**, i.e. bloom is fill-bound at its target size | flat 0 ms (bloom is fixed-overhead bound, which changes the tuning plan) | not run |
-| P0 | **All five configs report `err=0x0000`** after the vec2 fix (A2) | any non-zero error voids that config's number and the run | **MISSED** — `[PIG]E-glUniform2f:8390 - illegal to set uniform data with different types`, then `glViewport failed: 502` |
-
-Rule of the register: **no number from this run enters [§9](09-ps4-knowledge-base.md) until its row is
-filled in**, and any config whose error is not zero is reported as void rather
-than quietly dropped.
+The register, the rule that governs it and every row (BREW00098's P0-P5) now
+live in **`APPENDIX-LOGS.md`**, under *Predictions register*. It moved under
+G9: a prediction with the number that would falsify it is evidence, not a rule,
+and the manifest is at its size ceiling. Before a console run, write the new
+prediction there, and fill its `Result` column in the same turn the log is read.
 
 ### Round 1 — v118, logging only — **built, awaiting the console run**
 
