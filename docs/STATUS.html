@@ -33,21 +33,21 @@ ul { margin:0; padding-left:18px; color:#c4ced8 }
 .big { font-size:15px; margin-top:10px }
 </style></head><body><div class="wrap">
 <h1>Project status — PS4 media player</h1>
-<div class="sub">Generated 2026-11-24 07:25 from the files themselves, by <span class="mono">tools/status.py</span>. Every check below runs on this machine; the console is listed separately because it cannot be reached from here.<br>Read order: this board, then MANIFEST §2, then AGENTS, then MANIFEST §9, then HISTORY. Nothing later overrides anything earlier.</div>
+<div class="sub">Generated 2026-11-24 08:21 from the files themselves, by <span class="mono">tools/status.py</span>. Every check below runs on this machine; the console is listed separately because it cannot be reached from here.<br>Read order: this board, then MANIFEST §2, then AGENTS, then MANIFEST §9, then HISTORY. Nothing later overrides anything earlier.</div>
 <div class="big"><span class="pill" style="background:#2ecc71">all host checks passing</span></div>
 
 <h2>Where we are</h2>
 <div class="cards">
-  <div class="card"><div class="k">Latest player build</div><div class="v mono">v118 — `349943cbd65ddb1580a9e47aec7de1b0`</div>
+  <div class="card"><div class="k">Latest player build</div><div class="v mono">none found</div>
     <div class="what">Piglet sample v3 (GPU confirmed), BREW00094 catalogue (82 blobs), BREW00095 (502 at first frame), BREW00096 (85–100 fps,…</div></div>
-  <div class="card"><div class="k">Latest GPU package</div><div class="v mono">BREW00103 — 3bde518b33bf17627d5ab559b84f0084</div>
+  <div class="card"><div class="k">Latest GPU package</div><div class="v mono">none found</div>
     <div class="what">v118; BREW00103</div></div>
   <div class="card"><div class="k">Blocking question</div><div class="v">None left for the bloom proof of concept. It is answered to decision grade: one chain is under half a millisecond by the CPU bound, so a 6-pass chain is at most ~3 ms of a 16.7 ms frame - affordable, whatever the exact figure. What is still open is the *player* side: the video path and the filename logging (v118)</div></div>
   <div class="card"><div class="k">Next action</div><div class="v">run v118 (files/Ultimate-Media-Player-v118.pkg, MD5 349943cbd65ddb1580a9e47aec7de1b0) and pull app.log: the video: SRC / video: RATE / pull_rounds lines are the only way to settle the 16 fps question</div></div>
 </div>
 
 <h2>Checks</h2>
-<table><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Rules lint</b><div class="what">sections, rule ids, cross references, MD5s, ceilings</div></td><td class="t">3.7s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Rule index</b><div class="what">every rule parsed, each status checked against its evidence</div></td><td class="t">0.1s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Checker self-test</b><div class="what">8 injected faults, each one must be caught</div></td><td class="t">1.2s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Player tests</b><div class="what">host-side audio path, no console needed</div></td><td class="t">0.0s</td></tr></table>
+<table><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Rules lint</b><div class="what">sections, rule ids, cross references, MD5s, ceilings</div></td><td class="t">0.4s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Rule index</b><div class="what">every rule parsed, each status checked against its evidence</div></td><td class="t">0.2s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Checker self-test</b><div class="what">12 injected faults, each one must be caught</div></td><td class="t">7.2s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Player tests</b><div class="what">host-side audio path, no console needed</div></td><td class="t">0.1s</td></tr></table>
 
 <h2>Waiting on the console</h2>
 <table><tr><td class="dot" style="color:#f39c12">●</td>
@@ -58,12 +58,12 @@ ul { margin:0; padding-left:18px; color:#c4ced8 }
 <table><tr><th>#</th><th>Claim</th><th>Result</th></tr><tr><td class="mono">P0</td><td>All five configs report err=0x0000 after the vec2 fix (A2)</td><td><span class="pill" style="background:#2ecc71">missed</span></td></tr><tr><td class="mono">P1</td><td>A empty (clear + swap) lands at 8–10 ms, because the swap alone measured 8.3 ms in the v3 sample and nothing e</td><td><span class="pill" style="background:#2ecc71">hit</span></td></tr><tr><td class="mono">P2</td><td>B−A (ramp + 2,000 sprites at 1080p into the half-float target) is 4–8 ms</td><td><span class="pill" style="background:#f39c12">void</span></td></tr><tr><td class="mono">P3</td><td>C−B (bright, blur1, blur2, composite at 480x270) is 1–3 ms</td><td><span class="pill" style="background:#2ecc71">missed</span></td></tr><tr><td class="mono">P4</td><td>D−C (4,000 extra sprites) is 1–3 ms, i.e. sprites scale roughly linearly</td><td><span class="pill" style="background:#f39c12">open</span></td></tr><tr><td class="mono">P5</td><td>E−C (960x540 bloom targets instead of 480x270) costs +1–3 ms, i.e. bloom is fill-bound at its target size</td><td><span class="pill" style="background:#f39c12">open</span></td></tr></table>
 
 <h2>Notes</h2>
-<ul><li>cited logs not archived in files/: gpu-bloom.log, gpu-bloom101.log, gpu-bloom102.log, gpu-bloom96.log, gpu-bloom97.log, gpu-bloom98.log, gpu-bloom99.log, gpu-shader-cat.log, old.log, piglet-gpu-test-v3.log</li></ul>
+<ul><li>falsifier figures absent from their own row - derived, or misquoted: R1 12.52; R6 16.6; R15 3.69</li><li>cited logs not archived in files/: app.log, gpu-bloom.log, gpu-bloom101.log, gpu-bloom102.log, gpu-bloom96.log, gpu-bloom97.log, gpu-bloom98.log, gpu-bloom99.log, gpu-shader-cat.log, old.log, piglet-gpu-test-v3.log</li></ul>
 
 <h2>Rule index</h2>
-<div class="card"><div class="v">41 rules indexed from the documents, with
+<div class="card"><div class="v">48 rules indexed from the documents, with
 status and evidence — <span class="mono">files/RULES.index</span></div>
-<div class="what">assumed 4, measured 23, procedural 12, researched only 2</div></div>
+<div class="what">assumed 5, measured 27, procedural 14, researched only 2</div></div>
 
 <div class="foot">Every row is produced by running the real checker, not by
 remembering its result. Amber means the system is fine but a fact is unproven.</div>

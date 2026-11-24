@@ -95,6 +95,17 @@ for r in rules:
 
 index.sort(key=lambda x: (x["kind"], int(re.sub(r"\D", "", x["id"]))))
 
+# preserved fields - this generator only derives id/kind/status/evidence/statement;
+# falsifier and verified_on live only in the index and must survive a rebuild (R34).
+try:
+    _prev = {r["id"]: r for r in json.loads(read(OUT))["rules"]}
+except Exception:
+    _prev = {}
+for _e in index:
+    for _k in ("falsifier", "verified_on"):
+        if _prev.get(_e["id"], {}).get(_k):
+            _e[_k] = _prev[_e["id"]][_k]
+
 payload = {"generated_from": ["MANIFEST.md section 9", "AGENTS.md G-rules"],
            "count": len(index), "rules": index}
 text = json.dumps(payload, indent=1, ensure_ascii=False) + "\n"

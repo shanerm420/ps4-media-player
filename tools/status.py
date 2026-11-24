@@ -76,8 +76,8 @@ step("Rules lint", "sections, rule ids, cross references, MD5s, ceilings",
      [sys.executable, "tools/check-manifest.py"])
 step("Rule index", "every rule parsed, each status checked against its evidence",
      [sys.executable, "tools/rule-index.py"])
-step("Checker self-test", "8 injected faults, each one must be caught",
-     [sys.executable, "_scratch/linttest/mutate.py"])
+step("Checker self-test", "12 injected faults, each one must be caught",
+     [sys.executable, "test/mutate.py"])
 step("Player tests", "host-side audio path, no console needed",
      ["make", "-C", "test", "run"])
 

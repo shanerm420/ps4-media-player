@@ -17,8 +17,8 @@ wins and this file is updated to match.
 
 **Read order:** `files/STATUS.html` (state in one screen) → `MANIFEST.md` [§2](docs/manifest/02-current-focus.md)
 (where we are) → this file (the rules) → `MANIFEST.md` [§9](docs/manifest/09-ps4-knowledge-base.md) (the knowledge) →
-`HISTORY.md` (why it happened). Nothing later in that order overrides anything
-earlier.
+`HISTORY.md` (why it happened) → `../CONVERSATIONS.md` (why we work this way;
+not a rule). Nothing later in that order overrides anything earlier.
 
 **`MANIFEST.md` is the spine of the project** and is read first: the main goal
 verbatim, current focus, roadmap with statuses, the dated build log, decisions
