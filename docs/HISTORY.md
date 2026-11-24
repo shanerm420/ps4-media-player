@@ -901,3 +901,373 @@ MD5, same bytes), 6,619,136 B, MD5
   The prose no longer states counts — `CHECKSUMS.txt` states contents.
 - Both recorded in §6. The generator now fails when a measured rule reaches the index without
   evidence, so the local check and the CI gate test the same thing.
+
+### 2026-11-24 — the documentation tree is published on GitHub
+
+- Pushed to `shanerm420/ps4-media-player` `main` as three commits in the
+  prescribed order: `23e9ec4` rules, amendments, history → `213dfd6` the manifest
+  in twelve parts → `0098f58` index, rules file, board and checkers; annotated tag
+  `docs-2026-11-24` on the tip.
+- Verified from outside afterwards: 61 files added, **0 modified, 0 deleted**;
+  every one of the 61 byte-identical to the archive (`cmp`, 0 differ);
+  `md5sum -c CHECKSUMS.txt` 60/60 OK; `check-links.py` `0 problems` on the
+  repository copy; `README.md`, `src/`, `test/`, `preview/`, `third_party/`,
+  `Makefile`, `LICENSE`, `THIRD_PARTY.md` all untouched against `fa187cc`.
+- CI: workflow `docs` green on both the `main` push and the tag push.
+- One deviation, harmless: topics were set in the requested set but GitHub
+  returns them unordered, so the stored order differs from the prompt. A revised
+  prompt should say "these topics, order not significant".
+- The archive was rebuilt immediately before this pass to drop the root
+  `README.md` it used to carry, so that copying it over the repository could not
+  overwrite the existing one. MD5 `4e23426b1f3987141735b7a244043876`.
+
+### 2026-11-24 — BREW00099, the repetition-slope probe (built, not run)
+
+- Why: BREW00098 measured `empty` at 8.19 ms and `scene` at 8.32 ms, so
+  differencing could not see the work at all (§9 R20, amendment A3). This build
+  draws the same chain N times per frame, N = 1, 4 and 16, and reads the slope.
+- Source: `_scratch/gpu-test/bloom99/`, from the BREW00098 tree. `main.cpp` is
+  new; `gputest_log.cpp` has the banner corrected to `v5 (BREW00099)` and the
+  log moved to `/data/gpu-bloom99.log`; `PigletApplication::Render()` returns
+  after the swap when the probe owns the frame, because its `glGetError` checks
+  had turned the probe's first sticky error into `glViewport failed` and a clean
+  exit - the mechanism that ended BREW00098 after two of five configurations.
+- Built with: `make CCX=clang` and
+  `LD_LIBRARY_PATH=$HOME/openorbis/ssl11/usr/lib/x86_64-linux-gnu
+  DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 OO_PS4_TOOLCHAIN=$HOME/openorbis/PS4Toolchain
+  PATH=$HOME/.cache/ps4-toolchain/cc/bin:$PATH`. The compiler cache was rebuilt
+  first with `sh files/bootstrap-toolchain.sh` (clang 18.1.8).
+- Result: `IV0000-BREW00099_00-GPUBLOOM99000000.pkg`, MD5
+  `ab8a38d0b8c71dfc4df9a2f67e348fa2`, archived as
+  `files/GPU-Bloom-Slope-Probe-BREW00099.pkg`.
+- Host check before packaging (no console involved): the probe compiled against
+  stub GL headers and ran to completion, and with the stub charging 1 ms per
+  draw the fit returned **3.005 ms per pass against an expected 3.000, r2
+  1.0000**, with the floor reported separately as the intercept. That verifies
+  the state machine and the arithmetic; it says nothing about this GPU.
+- Not run on the console. No number in this entry is a console measurement.
+
+### 2026-11-24 — BREW00099 on the console: the isolation held, the setters did not
+
+- `CONFIG empty n=0 frames=60 ms=16.68 fps=53.1 state=ok err=0x0000` — 16.68 ms
+  is one vsync, so the repeated swap was being timed and would have pinned every
+  configuration to the same number.
+- `CONFIG n1 … frames=1 ms=15.99 state=VOID err=0x0502`,
+  `n4 … state=VOID err=0x0502`, `n16 … state=VOID err=0x0502`. The log carries
+  `[PIG]E-glUniform2f:8390 - illegal to set uniform data with different types`
+  and `[PIG]E-glUniform1fv:8073 - Failed to retrieve uniform info!`.
+- The driver's own introspection says `u_blurRadius type=0x8B50 FLOAT_VEC2
+  size=1 loc=49` and `u_gaussianKernel[0] type=0x1406 FLOAT size=11 loc=51`, so
+  the type was right and the **location** is what the setter will not accept.
+  A2 amended by A4.
+- **What the build got right:** the per-config isolation held. Four
+  configurations ran, three were voided by name, the run reached STAGE 13 and
+  left a complete log. BREW00098 died after two of five; BREW00099 finished and
+  reported. No cost number exists from this run and none is claimed.
+- The on-screen panel came back as an empty black rectangle: the 1024x256 glyph
+  atlas filled with `glTexSubImage2D` did not arrive, so the panel drew and the
+  words did not. Owner report, with a photograph, 2026-11-24.
+
+### 2026-11-24 — BREW00100 (built): probe the setter, time without the swap, draw the words as geometry
+
+- Three changes, each from the run above. (1) Every uniform's set is tried once
+  at link, the error drained and printed as `SET <prog> <name> loc=… type=…
+  form=… -> accepted|REFUSED 0x…`; a refused uniform is skipped from then on, so
+  the chain runs and its cost stays measurable. (2) The timed window closes at
+  `glFinish`, before the swap, and the swap is reported separately as `swap_ms`.
+  (3) The results panel is glyph quads over a 1x1 white texture, so nothing
+  depends on a texture upload arriving.
+- Host check, with the console's exact refusals simulated (2f refused, sticky
+  0x0502): all four configurations ran,
+  `RESULT slope ms_per_pass=3.004 intercept_ms=7.153 r2=1.0000 points=3` against
+  a stub that charges exactly 3.000 ms per pass. The code path is verified; the
+  GPU is not.
+- Built with `make CCX=clang` and the same environment as BREW00099. Content ID
+  `IV0000-BREW00100_00-GPUBLOOM10000000` (36 characters - the longer first
+  attempt was rejected as `Content ID must be 36 characters long`).
+- `files/GPU-Bloom-Slope-Probe-BREW00100.pkg`, MD5
+  `cd5891a8fb36e8beb23a600cee69dc7f`. Not run on the console.
+
+### 2026-11-24 — BREW00101: one folder for every probe log
+
+- Owner asked for all log files in one place so they stop having to hunt for
+  them. From this build on every probe log goes to
+  **`/data/Alpha PS4 test kit/`**: `gt_init()` calls `sceKernelMkdir` on it at
+  startup and logs the return code, then opens `<folder>/gpu-bloom101.log` as
+  the first sink, with plain `/data/gpu-bloom101.log` as the second so a failure
+  to create the folder still leaves a log.
+- Everything from BREW00100 is unchanged: the per-uniform set probe (A4/R21), the
+  swap-free timing window, and the results panel drawn as glyph quads.
+- `files/GPU-Bloom-Slope-Probe-BREW00101.pkg`, MD5
+  `0bf6f9ef61672e0494026256d1f50747`. Not run on the console.
+- A copy of every log already pulled from the console now sits in the workspace
+  at `files/Alpha PS4 test kit/`, with a read-me that lists which console path
+  each older build wrote to. The player's own `app.log` stays where it is: moving
+  it would break every dated instruction that says to pull it from
+  `/data/ultimate-ps4-media-player/`.
+
+### 2026-11-24 — BREW00101 on the console: the folder worked, the floor moved, the cause was ours
+
+- The log landed at `/data/Alpha PS4 test kit/gpu-bloom101.log` as designed, and
+  the panel drew as glyph quads; still no readable words on the photograph.
+- All five configurations ran and reported `state=ok err=0x0000`, and every one
+  measured the same number: `draw_ms=16.65` for N = 0, 1, 4 and 16. So the floor
+  is not the flip any more, it is the **vblank**: the swap of the previous frame
+  is already being waited on when the window opens.
+- `SET` answered **`REFUSED 0x0502` for every uniform** with
+  `[PIG]E-glUniform2f:8372 - Invalid program!` and
+  `[PIG]E-glUniformMatrix4fv:9260 - Invalid program!`. That is the real cause of
+  everything since BREW00097: `glUniform*` acts on the program that is **bound**,
+  and none was. BREW00097's "different types" was the same mistake with another
+  program current - loc 49 on `texmap` is `u_opacity`, a float. A4 was wrong and
+  is replaced by A5; A2's type reading was right all along.
+- No cost number from this run.
+
+### 2026-11-24 — BREW00102: bind before setting, no swap in the window, one log file only
+
+- Fixes from the run above: `glUseProgram` before every uniform set, including the
+  link-time probe; the timed window now opens on the draws and closes at
+  `glFinish` with **no swap inside it**, and the frame is presented only every
+  30th frame, outside the window; a fifth configuration at N = 64 gives the line
+  range if one chain turns out to be cheap.
+- **One log, one place** (owner's instruction, rule R22): `GT_SINKS` is 1 and the
+  only path is `/data/Alpha PS4 test kit/gpu-bloom102.log`. The six other sinks -
+  `/data`, `/data/pkg`, the player's folder and three USB mounts - are gone, so a
+  run leaves exactly one file and nothing to tidy up. The folder is created at
+  startup and the open is retried once after a second `sceKernelMkdir`.
+- Verified in the built `eboot.bin`: `strings` shows
+  `/data/Alpha PS4 test kit/gpu-bloom102.log` and no other log path.
+- **The cleanup is automatic** (owner: "part of that intelligent design is
+  cleaning up old files automatically", rule R22). At startup, before the new
+  file is opened, the build runs `sceKernelUnlink` over an exact-name table -
+  `/data/gpu-bloom97..102.log`, `/data/gpu-shader-cat.log`, the
+  `gpu-shader-cat.log` copies in `/data/pkg`, the player's folder and the three
+  USB mounts, and the older probe logs inside the test kit folder - and logs
+  `CLEAN removed=N refused=M of 17 known leftovers`. Exact names, never a
+  pattern, so nothing outside the table can be deleted; the player's `app.log`,
+  `app.old.log`, `config.ini` and `shots/` are deliberately not in it, because
+  those are user data and the player already keeps just the current and one
+  previous log.
+- `files/GPU-Bloom-Slope-Probe-BREW00102.pkg`, MD5
+  `811956619ea18987f0078ead0192ae6b` (rebuilt with the sweep). Not run on the
+  console.
+
+### 2026-11-24 — "Corrupted Data", CE-33481-9: an interrupted build shipped a half-written param.sfo
+
+- First install of BREW00102: package installer reported
+  `An error has occurred. (CE-33481-9)`, the home screen then showed the tile as
+  **Corrupted Data** with a broken icon, and starting it gave
+  `Cannot start the application. (CE-34544-0)`. No log, because the app never
+  ran: the console refused the package, not the program.
+- Cause, found by reading the package instead of guessing: the container was
+  fine (`7f434e54` CNT header, 6,619,136 bytes, same as the working 101), but
+  `sce_sys/param.sfo` had **7 entries instead of 11** - `TITLE`, `TITLE_ID`,
+  `VERSION` and `SYSTEM_VER` were missing, so the console had nothing to name
+  the app with. It was written at 05:02, the moment an earlier `make` was killed
+  by a tool timeout (exit 137) partway through the twelve `sfo_setentry` calls.
+  Every later build then found `param.sfo` newer than the Makefile, so `make`
+  never regenerated it, and both 102 packages carried the truncated file. The
+  build system was right; the file was newer than its recipe - the same
+  timestamp trap that a `make clean` exists to break.
+- Guard, so it cannot happen twice (rule R23): new `tools/check-pkg.py` parses
+  the SFO, requires all eleven entries and the required keys, checks that
+  `CONTENT_ID` and `TITLE_ID` match the Makefile, that the content id is 36
+  characters, that the package starts with the `CNT` magic and is not truncated.
+  The probe Makefile's `all` target now depends on a `check` target that runs it,
+  so a bad package fails the build instead of reaching the console. Run against
+  the rejected package it reports 3 failures; against the rebuild, 10 passes.
+- `files/GPU-Bloom-Slope-Probe-BREW00102.pkg` rebuilt after `make clean`, MD5
+  `3121e23fa1256a5e2b8c56d98e66f8a9`, `param.sfo` 11 entries, title
+  `GPU Bloom Slope 4`. Not run on the console.
+
+### 2026-11-24 — BREW00102 on the console: it installs, it runs, the panel is readable
+
+- After the package fix (R23) the build installed and ran: the log is
+  8,975 bytes at `/data/Alpha PS4 test kit/gpu-bloom102.log`, `mkdir` answered
+  `0x80020011` (already there), one sink, nothing anywhere else on the console.
+- **The uniform fix works and is proven:** all 23 `SET` lines read `accepted`
+  (texmap 5/5, bright 5/5, blur1 6/6, blur2 6/6). A5 was right; A2's type
+  reading was right; A4 was wrong. The picture now shows a real bloom field over
+  blocky sprites, and the results panel is legible as glyph quads.
+- **The timing is still quantised, and now we know exactly how.** With no swap
+  inside the timed window, `draw_ms` came back 16.656 at N = 0, 16.654 at N = 1,
+  16.658 at N = 4, 16.659 at N = 16 and 33.340 at N = 64 - one vblank and then
+  exactly two. The CPU window can only bound the work to "< one frame"; the
+  reported slope 0.278 ms/pass (r2 0.9509) is a single point crossing the vblank
+  boundary, so it is a **bound of 0.26-0.52 ms per chain**, not a measurement.
+  Read as a bound it is still the useful answer: even at the pessimistic end a
+  6-pass chain costs ~3.1 ms of a 16.7 ms frame. Amendment A6, rule R24.
+- The housekeeping sweep ran but said nothing, because the log line had been
+  inserted into a branch that is skipped when a sink opens: **fixed** in
+  BREW00103, which reports `CLEAN removed=N refused=M of 18 known leftovers`.
+
+### 2026-11-24 — BREW00103: the GPU clock, and a slope that is a measurement
+
+- New instrument per A6/R24: each measured frame is wrapped in
+  `GL_TIME_ELAPSED_EXT` through `EXT_disjoint_timer_query` (entry points from
+  `eglGetProcAddress`), the result is read after `glFinish`, and `gpu_ms` is
+  fitted against N = 1, 4, 16, 64. The CPU window is still logged beside it as a
+  cross-check, and if the entry points are missing the log says so instead of
+  quietly reporting a quantised number as a cost.
+- `CLEAN` is reported; the sweep table now includes `gpu-bloom102.log` in both
+  `/data` and the test kit folder, so a 103 run removes the 102 log itself.
+- `files/GPU-Bloom-Slope-Probe-BREW00103.pkg`, MD5
+  `3bde518b33bf17627d5ab559b84f0084`, `param.sfo` 11 entries, title
+  `GPU Bloom Slope 5`, package check 10/10. Not run on the console.
+
+### 2026-11-24 — "Is this already solved elsewhere?" Some of it was, and that changed the method
+
+- The owner asked whether this work is re-deriving answers other people already
+  published. It was, in two places, and both are now recorded as rules rather
+  than as embarrassment.
+- **`alechurri/shipofharkinian-ps4`, `docs/TECHNICAL.md`** is a commercial-scale
+  Piglet port with a "things that only showed up on hardware" section. It
+  settles the `eglSwapInterval` trap (interval 1 after `eglMakeCurrent` blocks
+  `eglSwapBuffers` forever on frame one; interval 0 plus your own timer is what
+  they run), the real memory budget for a `gde` app (~768 MiB direct, ~255 MiB
+  flexible, not the 4.6 GB the player's log quotes), shader compilation at
+  110-260 ms per program with no disk cache, no `glBlitFramebuffer`, 16-bit
+  offscreen depth, the OpenOrbis `struct stat` layout bug and `EINVAL` on
+  relative paths. All of that is now in `PIGLET-NOTES.md`.
+- **The ES2 spec** answers the question that cost us BREW00097 through
+  BREW00101: `glUniform*` sets the uniform of the **currently bound** program.
+  A4 was a detour through the driver's logs for something the spec states in a
+  sentence.
+- What the search did *not* answer, and therefore what a console run on it is
+  worth spending: the cost of one 1080p bloom chain here, why a frame with the
+  present removed still costs 16.66 ms, and whether a Piglet surface can share a
+  screen with SDL's chrome. Note the sample already calls
+  `eglSwapInterval(s_display, 0)` before `eglChooseConfig`
+  (`PigletApplication.cpp:182`), so vsync was never the explanation for that
+  16.66 ms.
+- Rules R25 (spec, then other homebrew, then a console run) and the new §8 list
+  of who solved what; findings in `PIGLET-NOTES.md` (`researched only` until
+  measured here). No code was copied; every item is a written finding.
+
+### 2026-11-24 — Rule R26: reflect on the manifest before every step
+
+- The owner's instruction: every step, whatever the build, must first be checked
+  against the manifest, so no work is done that the project already answers -
+  and they should never have to be the one who says "somebody already did that".
+- **R26** is now in `MANIFEST.md` §9 next to R25, and restated as a working rule
+  in `AGENTS.md` (in one line, because G9's 640-line ceiling has no room to
+  spare). It names its own evidence: BREW00102's timing question was already
+  published by `shipofharkinian-ps4` and the uniform question was answered by the
+  ES2 spec, yet both went to the console as tests, and the owner had to point it
+  out. The rule's test is mechanical - before a build, run, research task or
+  report line, reread §2/§6/§8/§9, `PIGLET-NOTES.md` and the amendments, then
+  say which **recorded fact** the step tests and what is **genuinely new**; if it
+  is already recorded, cite it and spend nothing; if the step is already in the
+  plan, drop it. It inherits to every future project through G10.
+- To make that reflection visible rather than a promise, the where-we-are block
+  (§2) now carries a **Reflection (R26)** row: what is already recorded for the
+  next run, and what that run actually adds.
+- Housekeeping to fit the hard 128 KB manifest ceiling (G9): the long
+  "Round-state notes carried over from AGENTS.md" block moved, unchanged, to
+  `ROUND-NOTES.md` with a pointer in its place. Nothing was deleted; the manifest
+  is now 125 KB against the 128 KB limit and the rules stay readable.
+
+### 2026-11-24 — Re-amending the manifest after reading it whole: the state block was describing last week
+
+- The owner asked me to read the whole manifest and re-amend it, because being
+  asked to test known hardware means something recorded is being missed. Reading
+  it found three stale entries and one recorded rule I had contradicted.
+- **Stale, now fixed.** The where-we-are block still listed "Built and not yet
+  run: v118; BREW00102", still called BREW00098 the blocking question, still said
+  the unblocker was BREW00099, and still dated the last console verification to
+  the BREW00098 log - while BREW00101 and BREW00102 had both run and 103 was
+  built. The console-run row now carries 101 and 102 with their numbers.
+- **Three §6 rows described a world that ended with A5.** "Bloom 3 drove the blur
+  with a vec4" and "the driver's own location is not accepted by its own setter"
+  were still marked open; both are the same missing `glUseProgram`, and BREW00102
+  proved it with 23/23 `SET accepted`. "Round 2's bloom chain cannot be written as
+  GLSL" was still the gate for the whole proof of concept; the blobs exist, link
+  and draw - the gate passed. Two cosmetic rows were closed as historical.
+- **The contradiction is now A7.** The measurement rules in `AGENTS.md` have said
+  since v112 that every frame waits on the display and lands on whole 16.7 ms
+  multiples. BREW00102's 16.656 / 16.659 / 33.340 are one, one and two refreshes -
+  that rule obeying itself. Treating "why 16.66 ms" as an open question worth a
+  console run was asking for a fact already written down. A6's reading is marked
+  [superseded A7], and A7 keeps only the part that is genuinely new: the chain's
+  own cost, which the display cannot show.
+- **Two rules.** R27: the hardware is known - no run to confirm the display
+  contract, module load, memory class, packaging route, log path or uniform
+  binding; cite the recorded line instead, and quote the one unknown a run closes.
+  To make that usable, §7 gained a **"Settled hardware - do not spend a console
+  run"** table: eleven facts, each with its source, from the 60 Hz/vblank contract
+  to the blob set and the param.sfo rule.
+- **What that changed about the plan, which is the point of doing it.** The bloom
+  proof of concept no longer has a blocking question: one chain is under half a
+  millisecond by the CPU bound, so a 6-pass chain is at most ~3 ms of a 16.7 ms
+  frame, which is affordable whatever the decimal is. BREW00103 stays built and
+  unrun **on purpose** - it would turn a bound into a prettier number and decide
+  nothing. The next console run is v118, because its logging answers the video
+  16 fps question and the `??????` filename question, and no source can.
+
+### 2026-11-24 — Platform scope: PS4 software for every PS4, and Pro numbers are ceilings
+
+- Owner-stated, recorded as rule R28 and as a block at the top of §7: the target
+  is the **PS4 family — base, Slim and Pro — as one platform**, not this one
+  machine. Every model runs the same Orbis OS and the same interfaces this
+  project uses (Piglet/GLES2, `sceAudioOut`, `libSceAvPlayer`, `scePad`, the same
+  package format and install path), so PS4 is the common denominator: **working
+  PS4 software runs on all PS4s**, and a model that differs in clocks changes
+  only how fast the same code gets there, never what it does.
+- What that forbids, written down so it can be checked: no model-specific builds
+  or branches (one package serves every model); no Pro-only assumption in a look
+  or a feature; no budget that only fits a Pro. Every measurement now names the
+  model it ran on, and **a Pro figure is an upper bound** - the base PS4 is the
+  floor a budget must fit.
+- Status is honest: `owner-stated 2026-11-24`, **not yet measured on a second
+  model** - the only console this project has run on is the owner's Pro on
+  12.52. Firmware, GoldHEN and FTP are recorded as that machine's setup, not as
+  features the software requires.
+- The manifest is now at 130,866 bytes of its 128 KB-plus-slack ceiling (206
+  bytes spare). The next substantial addition has to move a section to an
+  appendix first - same as the round notes did - rather than squeeze the rules.
+
+### 2026-11-24 — Rule R29: reuse the method that exists instead of rebuilding it
+
+- Owner-stated, recorded as rule R29: **do not reproduce a method that already
+  exists.** Look in this order and use what is found - this repository's own
+  proven code, the OpenOrbis samples, a licence-clean library, the published
+  technique - and write new code only where nothing fits or the licence forbids
+  it. When new code is written it comes from the documented method and is never
+  pasted (G7 clean-room note). If two implementations of one job exist, the
+  second must name why it exists or it goes.
+- The rule names its own evidence rather than inventing it: every GPU probe from
+  BREW00097 on carries a hand-written logger and a hand-rolled glyph-quad text
+  renderer, while the player has shipped `src/applog.c` and its own UI text
+  drawing since v111. The duplication was defensible for a thirty-line
+  throwaway and is not defensible now, so §6 carries it as an open item with a
+  decision: the next probe either links the player's logger and text renderer or
+  writes one line explaining why it keeps its own.
+- Housekeeping for the size ceiling (G9): the two logging sections - the three
+  stranger logs read and ruled out, and the survey of where `/data` accepts
+  writes - moved to `APPENDIX-LOGS.md` with a pointer. Nothing deleted; the
+  manifest is back to 126 KB against 128 KB and the rules were not squeezed.
+
+### 2026-11-24 — Rule R30: only looks are put to the owner; technical questions are answered from the manifest
+
+- Owner-stated, recorded as rule R30 and as a rewrite of the AGENTS reply rule:
+  **the only thing asked should be aesthetic.** If a question is about
+  programming or coding in any way, the answer comes from the manifest and the
+  work continues.
+- What counts as a question: which look, which palette, sharper or smoother,
+  this layout or that - a visual choice only the owner can make. What does not:
+  an API, a driver refusal, a format, a build error, a timing method, a
+  structure, a default value. Those are resolved in this order - this manifest,
+  `AGENTS.md`, `PIGLET-NOTES.md`, `APPENDIX-LOGS.md`, `ROUND-NOTES.md`, the
+  ES2/EGL spec, the OpenOrbis samples, other PS4 homebrew - and the answer is
+  written back into the manifest in the same turn, so the next session finds it
+  rather than asking again. If nothing holds the answer, it becomes a decision
+  recorded with its reason, not a question.
+- Asking the owner to pick between technical options is now a defect in the
+  round, in the same class as spending a run on a known fact (R27) or rebuilding
+  a method that exists (R29).
+- A console run is explicitly **not** a question: it is a step needing their
+  hands, and the reply hands it over complete - file, MD5, install route, what to
+  do, which lines to send back. That is unchanged.
+- `AGENTS.md` carried the older, softer version of this rule ("questions are
+  allowed when the owner asks to be consulted"); it was rewritten in place to
+  match R30 without adding a line, so the 640-line ceiling still holds.

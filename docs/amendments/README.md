@@ -6,5 +6,7 @@ amended; the wording before is kept so a reader can see what moved and why.
 - [A1 — per-pass `glFinish` as a GPU timing method.](A1.md)
 - [A2 — `u_blurRadius` typed as a vec4.](A2.md)
 - [A3 — treating a difference between configs as the cost.](A3.md)
+- [A4 — "the type was wrong" read from the console's log.](A4.md)
+- [A5 — setting a uniform on a program that is not bound.](A5.md)
 
 [Back to the rule index](../rules/README.md).
