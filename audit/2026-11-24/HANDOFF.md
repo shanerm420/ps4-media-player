@@ -14,20 +14,20 @@ Any AI taking over should start here. Do not treat prior chat history as evidenc
 
 ## Where things live
 
-- Laptop: `ssh -o BatchMode=yes MX-Linux-2000@192.168.1.172`
-- Kit root: `/home/MX-Linux-2000/Desktop/PS4Dev/ps4-publish-b`
-- Project: `/home/MX-Linux-2000/Desktop/PS4Dev/ps4-publish-b/ps4-media-player`
-- Relay: `/home/MX-Linux-2000/Desktop/PS4Dev/ps4-publish-b/RELAY.md`
-- Local audit clone: `/root/ps4-project/ps4-media-player-backup`
-- Audit directory: `/root/ps4-project/ps4-media-player-backup/audit/2026-11-24`
+- Laptop: `ssh -o BatchMode=yes <laptop-user>@<laptop-host>`
+- Kit root: `<laptop-home>/Desktop/PS4Dev/ps4-publish-b`
+- Project: `<laptop-home>/Desktop/PS4Dev/ps4-publish-b/ps4-media-player`
+- Relay: `<laptop-home>/Desktop/PS4Dev/ps4-publish-b/RELAY.md`
+- Local audit clone: `<audit-clone>`
+- Audit directory: `<audit-clone>/audit/2026-11-24`
 
 ## First actions for a takeover
 
 1. Read `HANDOFF.md`, `FINDINGS.md`, `METHOD.md`, and the tail of `audit/2026-11-24/current/RELAY.md`.
-2. Check the live relay size: `stat -c %s /home/MX-Linux-2000/Desktop/PS4Dev/ps4-publish-b/RELAY.md`.
+2. Check the live relay size on the laptop with `stat -c %s <relay-path>`; obtain `<relay-path>` from the owner or the private relay, not from this public file.
 3. If it changed, read everything after your last known offset. Message numbers collide; identity is sender + UTC timestamp.
 4. Verify hashes yourself with `md5sum` on the laptop. Do not accept a claim because another agent wrote it.
-5. Append one relay message under `flock /tmp/relay.lock`, at the bottom only, with a UTC timestamp and sender name. Do not edit another sender's text.
+5. Append one relay message under a lock file writable on your side, for example `flock $HOME/relay.lock`, at the bottom only, with a UTC timestamp and sender name. `/tmp` is not writable in Termux; do not assume the laptop's lock path is visible. Do not edit another sender's text.
 6. Update this branch only with concluded, independently checked findings.
 
 ## Relay protocol in force
@@ -66,7 +66,7 @@ md5sum MANIFEST.md ../HISTORY.md ../RULES.index AGENTS.md src/main.c src/vis_art
 
 Notes:
 
-- `check-manifest.py`: 27 passed, 1 failed — `STATUS.html` stale; owner must run `make status`.
+- `check-manifest.py`: 30 passed, 1 failed — `STATUS.html` stale; owner must run `make status`. Section 16 adds three checks: RULES.index parses, ids agree both ways (38 R + 10 G = 48), every entry carries a falsifier. The current fixed checker is copied at `current/tools/check-manifest.py`, md5 `e26b6f9a7c20ff94564b5d104b203ebe`.
 - `rule-index.py`: 48 rules, 0 problems, exit 0.
 - `publish-docs.py --check`: 84 files, 410 KB, 76 pages, link check 0. This tool rewrites `_scratch/publish/`; take hashes before running it.
 - Falsifier-number audit: for each R rule, check numbers in the falsifier against that rule's own statement/evidence/status. Current flags: R1 `12.52`, R6 `16.6`, R15 `3.69`; all are legitimate derived figures, not a gate.
@@ -94,12 +94,12 @@ Notes:
 Copy new files into `audit/2026-11-24/current/`, add new dated backups under `backups/`, regenerate diffs and checksums, then commit only additive changes:
 
 ```bash
-git -C /root/ps4-project/ps4-media-player-backup add audit/2026-11-24
-git -C /root/ps4-project/ps4-media-player-backup \
+git -C <audit-clone> add audit/2026-11-24
+git -C <audit-clone> \
   -c user.name='shanerm420' \
   -c user.email='shanerm420@users.noreply.github.com' \
   commit -m "docs: update relay audit findings"
-git -C /root/ps4-project/ps4-media-player-backup push origin audit/relay-2026-11-24
+git -C <audit-clone> push origin audit/relay-2026-11-24
 ```
 
 Do not modify `main`. Do not overwrite `original/`, `backups/`, or previous findings. Add a new dated file or append a dated section instead.

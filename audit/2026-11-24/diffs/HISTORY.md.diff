@@ -1,5 +1,5 @@
---- /root/ps4-project/ps4-media-player-backup/audit/2026-11-24/original/docs/HISTORY.md	2026-11-24 02:43:55.000000000 -0500
-+++ /root/ps4-project/ps4-media-player-backup/audit/2026-11-24/current/docs/HISTORY.md	2026-11-24 06:44:05.426832510 -0500
+--- <audit-clone>/audit/2026-11-24/original/docs/HISTORY.md	2026-11-24 02:43:55.000000000 -0500
++++ <audit-clone>/audit/2026-11-24/current/docs/HISTORY.md	2026-11-24 06:44:05.426832510 -0500
 @@ -1,12 +1,3 @@
 -# Build history
 -

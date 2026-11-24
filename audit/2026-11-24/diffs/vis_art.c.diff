@@ -1,5 +1,5 @@
---- /root/ps4-project/ps4-media-player-backup/audit/2026-11-24/original/src/vis_art.c	2026-11-24 02:43:55.000000000 -0500
-+++ /root/ps4-project/ps4-media-player-backup/audit/2026-11-24/current/src/vis_art.c	2026-11-24 06:44:06.922832509 -0500
+--- <audit-clone>/audit/2026-11-24/original/src/vis_art.c	2026-11-24 02:43:55.000000000 -0500
++++ <audit-clone>/audit/2026-11-24/current/src/vis_art.c	2026-11-24 06:44:06.922832509 -0500
 @@ -847,148 +847,50 @@
  
  static SDL_Texture *s_tex;

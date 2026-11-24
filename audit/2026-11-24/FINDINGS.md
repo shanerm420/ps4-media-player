@@ -3,7 +3,7 @@
 This directory is additive. Nothing in the repository's existing tree was overwritten.
 
 - Original files: exact copies from published `main` at `f13e46232474c4845f4be25d619fe2cd735a49dd`.
-- Current files: copies from `/home/MX-Linux-2000/Desktop/PS4Dev/ps4-publish-b` on the MX laptop after the documented one-pass edits.
+- Current files: copies from `<laptop-home>/Desktop/PS4Dev/ps4-publish-b` on the MX laptop after the documented one-pass edits.
 - Backups: all dated files from `ps4-media-player/_scratch/backups/` on the laptop.
 - Diffs: `diff -u original/... current/...`.
 - `current/RELAY.md` is the full append-only relay record, including all corrections and message-number collisions.
@@ -59,13 +59,13 @@ This audit is not a gate because it cannot distinguish a derived constant from a
 Checker state:
 
 - `tools/rule-index.py`: 48 rules, 0 problems, exit 0.
-- `tools/check-manifest.py`: 27 passed, 1 failed — `STATUS.html` stale; owner must run `make status`.
+- `tools/check-manifest.py`: 30 passed, 1 failed — `STATUS.html` stale; owner must run `make status`. Section 16 adds three checks: RULES.index parses, ids agree both ways (38 R + 10 G = 48), every entry carries a falsifier. The fixed checker is copied at `current/tools/check-manifest.py`, md5 `e26b6f9a7c20ff94564b5d104b203ebe`; the old 27-check copies in `original/` and `backups/` are historical and must not be used as the current gate.
 - `tools/publish-docs.py --check`: 84 files, 410 KB, 76 md/html pages, link check 0 problems; this tool rewrites `_scratch/publish/`.
 - The eleven cited `.log` files are absent from the tree and are classified as console-side `/data/` artefacts; the note asks for archiving.
 
 ## Firmware question
 
-The owner stated the firmware as "12.5, or 12.52, I don't know which". The tree has three conflicting indications: prose recording 12.52 from owner answers, an app boot string `12.508.001 (0x12508001)`, and an older UnityOrbisBridge log saying 12.50. No correction was made. The console's Settings > System Information string is authoritative.
+The owner stated the firmware as "12.5, or 12.52, I don't know which". The tree has three conflicting indications: prose recording 12.52 from owner answers, an app boot string `12.508.001 (0x12508001)`, and an older UnityOrbisBridge log saying 12.50. The triple-indication is verified, but the owner read is still pending; do not close this by inference. The console's Settings > System Information string is authoritative. No correction was made.
 
 ## Open owner decisions
 

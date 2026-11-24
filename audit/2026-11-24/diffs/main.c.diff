@@ -1,5 +1,5 @@
---- /root/ps4-project/ps4-media-player-backup/audit/2026-11-24/original/src/main.c	2026-11-24 02:43:55.000000000 -0500
-+++ /root/ps4-project/ps4-media-player-backup/audit/2026-11-24/current/src/main.c	2026-11-24 06:44:06.366832509 -0500
+--- <audit-clone>/audit/2026-11-24/original/src/main.c	2026-11-24 02:43:55.000000000 -0500
++++ <audit-clone>/audit/2026-11-24/current/src/main.c	2026-11-24 06:44:06.366832509 -0500
 @@ -3771,6 +3771,12 @@
      const char *kind = "accelerated (GPU)";
  

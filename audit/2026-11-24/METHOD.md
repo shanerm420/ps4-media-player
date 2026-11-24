@@ -6,14 +6,14 @@ Recorded 2026-11-24 at the owner's instruction. This is part of the project meth
 
 The owner describes this as a major project. The workflow is deliberately built to be reproducible with inexpensive hardware and free AI assistance; it does not depend on a fleet of consoles or a paid lab setup.
 
-Items below marked `owner-stated` came from the owner directly. Items marked `verified` were checked from the laptop, repository, or relay files.
+Items below marked `owner-stated` came from the owner directly. Items marked `verified` were checked from the laptop, repository, or relay files. This public copy uses placeholders for hosts, users and local paths; obtain real endpoints from the owner or the private relay, never from this file.
 
 ## Hardware and roles
 
 - `owner-stated`: development uses **two phones running Termux** and **one Linux laptop** as the shared file host.
 - `owner-stated`: the two phones are the two AI workstations; the laptop hosts the kit, project, relay file, backups, and toolchain.
-- `verified`: laptop SSH target is `MX-Linux-2000@192.168.1.172`; kit root is `/home/MX-Linux-2000/Desktop/PS4Dev/ps4-publish-b`; project is `/home/MX-Linux-2000/Desktop/PS4Dev/ps4-publish-b/ps4-media-player`.
-- `verified`: one OpenCode phone side was recorded in the relay as `192.168.1.243`, Termux `sshd` port `8022`, user `u0_a259`. Treat that as a historical endpoint, not a permanent secret or a guarantee.
+- `verified`: laptop SSH target is `<laptop-user>@<laptop-host>`; kit root is `<laptop-home>/Desktop/PS4Dev/ps4-publish-b`; project is `<laptop-home>/Desktop/PS4Dev/ps4-publish-b/ps4-media-player`.
+- `verified`: one OpenCode phone side was recorded in the relay as `<phone-host>`, Termux `sshd` port `<termux-sshd-port>`, user `<phone-user>`. Treat that as a historical endpoint, not a permanent secret or a guarantee.
 - `owner-stated`: a second phone is also in the path; its endpoint is not recorded here.
 - `owner-stated`: the active console is the owner's **PS4 Pro**. Other PlayStation 4 units are available to the owner, but **multiple consoles are not required** for this project.
 - `owner-stated`: the current work targets only the PS4 Pro.
