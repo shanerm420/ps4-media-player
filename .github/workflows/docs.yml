@@ -1,0 +1,25 @@
+name: docs
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every link and heading anchor resolves
+        run: python3 tools/check-links.py
+      - name: The rule index is valid JSON with statuses
+        run: |
+          python3 - <<'PY'
+          import json
+          d = json.load(open("docs/RULES.index", encoding="utf-8"))
+          rules = d["rules"]
+          allowed = {"measured", "researched only", "assumed", "contested", "procedural"}
+          bad = [r["id"] for r in rules if r["status"] not in allowed]
+          assert not bad, "unknown status: %s" % bad
+          assert all(r["evidence"] or r["status"] != "measured" for r in rules),               "measured rule with no evidence"
+          print("%d rules, statuses valid" % len(rules))
+          PY

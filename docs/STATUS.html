@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Project status — PS4 media player</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root { color-scheme: dark }
+body { margin:0; background:#0f1216; color:#e8edf2;
+       font:15px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif }
+.wrap { max-width:980px; margin:0 auto; padding:28px 22px 60px }
+h1 { font-size:22px; margin:0 0 4px }
+.sub { color:#8b98a5; font-size:13px; margin-bottom:22px }
+h2 { font-size:13px; letter-spacing:.08em; text-transform:uppercase;
+     color:#8b98a5; margin:30px 0 10px; font-weight:600 }
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px }
+.card { background:#151a21; border:1px solid #222a33; border-radius:10px; padding:14px 16px }
+.card .k { color:#8b98a5; font-size:12px; text-transform:uppercase; letter-spacing:.06em }
+.card .v { margin-top:6px; font-size:14px }
+table { width:100%; border-collapse:collapse; background:#151a21;
+        border:1px solid #222a33; border-radius:10px; overflow:hidden }
+td, th { padding:12px 14px; border-bottom:1px solid #1d242c; text-align:left;
+         vertical-align:top; font-size:14px }
+tr:last-child td { border-bottom:none }
+.dot { width:22px; font-size:15px }
+.what { color:#8b98a5; font-size:12.5px; margin-top:2px }
+.t { color:#6b7784; width:64px; text-align:right; font-variant-numeric:tabular-nums }
+pre { margin:10px 0 0; padding:10px; background:#0b0e12; border:1px solid #2a1f1f;
+      border-radius:7px; font-size:12px; color:#ffb4a8; overflow-x:auto; white-space:pre-wrap }
+.pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11.5px;
+        font-weight:700; color:#0f1216 }
+.mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:#9fb0c0 }
+ul { margin:0; padding-left:18px; color:#c4ced8 }
+.foot { margin-top:34px; color:#6b7784; font-size:12px }
+.big { font-size:15px; margin-top:10px }
+</style></head><body><div class="wrap">
+<h1>Project status — PS4 media player</h1>
+<div class="sub">Generated 2026-11-24 03:19 from the files themselves, by <span class="mono">tools/status.py</span>. Every check below runs on this machine; the console is listed separately because it cannot be reached from here.<br>Read order: this board, then MANIFEST §2, then AGENTS, then MANIFEST §9, then HISTORY. Nothing later overrides anything earlier.</div>
+<div class="big"><span class="pill" style="background:#2ecc71">all host checks passing</span></div>
+
+<h2>Where we are</h2>
+<div class="cards">
+  <div class="card"><div class="k">Latest player build</div><div class="v mono">v118 — `349943cbd65ddb1580a9e47aec7de1b0`</div>
+    <div class="what">Piglet sample v3 (GPU confirmed), BREW00094 catalogue (82 blobs), BREW00095 (502 at first frame), BREW00096 (85–100 fps,…</div></div>
+  <div class="card"><div class="k">Latest GPU package</div><div class="v mono">BREW00098 — `a5607cc90de5a17491566a4e949ef4d1`</div>
+    <div class="what">v118</div></div>
+  <div class="card"><div class="k">Blocking question</div><div class="v">What does a 1080p bloom chain cost? BREW00098 could not answer: two of five configs ran and both sat on an 8.3 ms present floor, so the draw cost is hidden behind the flip</div></div>
+  <div class="card"><div class="k">Next action</div><div class="v">build the repetition-slope probe (BREW00099): N passes per frame at N = 1, 4, 16, fit the line, slope is the cost</div></div>
+</div>
+
+<h2>Checks</h2>
+<table><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Rules lint</b><div class="what">sections, rule ids, cross references, MD5s, ceilings</div></td><td class="t">3.2s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Rule index</b><div class="what">29 rules parsed, each status checked against its evidence</div></td><td class="t">0.1s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Checker self-test</b><div class="what">8 injected faults, each one must be caught</div></td><td class="t">0.7s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Player tests</b><div class="what">host-side audio path, no console needed</div></td><td class="t">0.0s</td></tr></table>
+
+<h2>Waiting on the console</h2>
+<table><tr><td class="dot" style="color:#f39c12">●</td>
+<td><b>BREW00098 bloom differential run</b><div class="what">Install from Hdd [hdd:/data/pkg/], run ~2 minutes, pull /data/gpu-bloom98.log over FTP 2121 and drop it in the chat.</div></td>
+<td class="t">waiting</td></tr></table>
+
+<h2>Predictions for that run</h2>
+<table><tr><th>#</th><th>Claim</th><th>Result</th></tr></table>
+
+<h2>Notes</h2>
+<ul><li>cited logs not archived in files/: gpu-bloom.log, gpu-bloom96.log, gpu-bloom97.log, gpu-bloom98.log, gpu-shader-cat.log, piglet-gpu-test-v3.log</li></ul>
+
+<h2>Rule index</h2>
+<div class="card"><div class="v">30 rules indexed from the documents, with
+status and evidence — <span class="mono">files/RULES.index</span></div>
+<div class="what">assumed 3, measured 20, procedural 5, researched only 2</div></div>
+
+<div class="foot">Every row is produced by running the real checker, not by
+remembering its result. Amber means the system is fine but a fact is unproven.</div>
+</div></body></html>
