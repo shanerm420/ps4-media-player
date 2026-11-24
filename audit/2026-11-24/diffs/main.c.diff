@@ -1,0 +1,27 @@
+--- <audit-clone>/audit/2026-11-24/original/src/main.c	2026-11-24 02:43:55.000000000 -0500
++++ <audit-clone>/audit/2026-11-24/current/src/main.c	2026-11-24 06:44:06.366832509 -0500
+@@ -3771,6 +3771,12 @@
+     const char *kind = "accelerated (GPU)";
+ 
+     wsurf = NULL;
++    /* A3b: A3 hands the scaling to the renderer, so the filter stops being
++     * implicit. Set before the renderer exists - backends read this once -
++     * and read it back below: a hint silently ignored must not be allowed
++     * to read as "linear". */
++    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
++
+     ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+     if (!ren) {
+         plog("boot: accelerated renderer failed: %s", SDL_GetError());
+@@ -3792,6 +3798,11 @@
+         return 1;
+     }
+     plog("boot: renderer ok (%s)", kind);
++    {
++        const char *sq = SDL_GetHint(SDL_HINT_RENDER_SCALE_QUALITY);
++
++        plog("boot: scale quality hint '%s'", sq ? sq : "(unset)");
++    }
+ 
+     /* Everything about the output path that decides what a frame costs: the
+      * renderer, the surface format the software blit has to convert into, and

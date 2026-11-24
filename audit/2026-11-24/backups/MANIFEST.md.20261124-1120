@@ -1,0 +1,1455 @@
+# MANIFEST — Ultimate PS4 Media Player
+
+**Read order:** `files/STATUS.html` (state in one screen) → §2 in this file
+(where we are) → `AGENTS.md` (the rules) → §9 here (the knowledge) →
+`HISTORY.md` (why it happened). Nothing later in that order overrides anything
+earlier. The board is generated, never hand-edited: `make status`.
+
+The single source of truth for this project: the goal, where we are, what was
+done, what was decided and rejected, what broke and why, what is unknown, and
+what happens next. Read it at the start of every session. Update it at the end of
+every meaningful step, and append to the build log rather than editing it.
+
+`AGENTS.md`, next to this file, is the engineering half: coding rules, measured
+SDL/PS4 facts, build commands, and the long-form plan text. Where the two touch
+the same subject, this file owns the goal, the roadmap and the state; `AGENTS.md`
+owns the technical detail. Neither is allowed to contradict the other — if a new
+instruction wins, both are updated.
+
+## 1. Main goal
+
+Copied word for word from the project brief. Never edited unless the owner says so.
+
+> You are the lead engineer and project keeper for a homebrew PS4 project. The
+> main goal never changes: build a PKG that installs on a jailbroken PlayStation
+> 4 and runs as a media player app. Beyond that app, you must collect and keep
+> every piece of knowledge needed to build anything for the PS4, so future apps
+> can be built from the same notes. Be smart and thorough. Never guess when you
+> can verify. Never drift from the main goal when working on a small detail.
+> After any detour, return to the goal and say where you are in the plan.
+
+### The graphics standard — standing requirement, added by the owner 2026-11-23
+
+This is part of the main goal now, not a preference, and it applies to **every
+visualizer**, not only Liquid.
+
+> Every visualizer must have the best graphics the PS4 can produce for what it
+> is: modern real-time graphics quality, matched to the console's real
+> capabilities. Native output resolution, steady frame rate, smooth motion, and
+> effects such as bloom, glow, depth, particles, lighting and shader-based
+> rendering wherever the hardware allows. No software-rendered, low-resolution
+> or low-frame-rate result if a better method exists on this hardware. Any
+> quality trade-off is logged as a decision with its reason and revisited later.
+
+How it has to be carried out, as instructed:
+
+- Research what the PS4 GPU can do for each visualizer topic, **using five
+  different phrasings per topic**, and record the findings and every source
+  disagreement in the knowledge base (§9, sources in §8).
+- **Audit every existing visualizer** against the standard and log where each
+  falls short (defects in §6, the work in §3).
+- Fix the biggest gaps first.
+- A **software-rendered, low-resolution or low-frame-rate result is not
+  acceptable** if a better method exists on this hardware.
+- Any quality trade-off is logged as a decision (§5) with its reason and the
+  alternatives rejected, and revisited later. A trade-off is not a settlement.
+- The owner expects this to mean **moving rendering onto the GPU**. The audit
+  confirms or rejects that, and the roadmap carries it as steps (§3).
+- How every graphics decision is made from now on — the research/measure/rule
+  loop, the rules already measured on this console, and the approaches already
+  rejected — is §9 **Graphics principles**. Those rules are the same standing
+  requirement in practice: they outrank tuning, taste and the old software
+  canvas.
+
+**Why this matters here, in the owner's words:** Liquid currently runs at 15 fps
+on a reduced canvas, which points to CPU rendering. That is the key gap against
+this standard — not a detail, and not a default to defend. Every later decision
+about the visualizers is measured against it.
+
+## 2. Current focus
+
+### Where we are — the one block to read first (2026-11-24)
+
+The single answer to "where is this project now". Updated on every build, package
+and log read, never left to the end of a round. Prose history lives in §4 and the
+knowledge in §9; this block is only ever the present.
+
+| Field | State |
+|---|---|
+| Latest player build | **v118** — `files/Ultimate-Media-Player-v118.pkg`, MD5 `349943cbd65ddb1580a9e47aec7de1b0` — logging only, **built, not yet run on the console**; v117 `290e7edab55e864e35d497b369828193` is the rollback |
+| Latest GPU package | **BREW00103** — `files/GPU-Bloom-Slope-Probe-BREW00103.pkg`, MD5 `3bde518b33bf17627d5ab559b84f0084` — GPU-clock slope per A6/R24, `CLEAN` line now reported, one log path with automatic cleanup, package gated by `tools/check-pkg.py`, **built 2026-11-24, not yet run** |
+| Built and not yet run | v118; BREW00103 |
+| Already run on the console | Piglet sample v3 (GPU confirmed), BREW00094 catalogue (82 blobs), BREW00095 (502 at first frame), BREW00096 (85–100 fps, submission timings only), BREW00097 (15 fps; `glFinish` and vec4 bugs, see §9 A1/A2), BREW00098 (A empty 8.19 ms, B scene 8.32 ms, then C died on a uniform type — and both numbers are the present floor, not the work), BREW00099 (empty 16.68 ms = one vsync; n1/n4/n16 all VOID on `0x0502`), BREW00101 (one log folder works; all five configs `ok`; every `SET` refused with `Invalid program!` — the program was never bound), BREW00102 (installed after the package fix; **all 23 `SET` accepted**; panel legible; bloom visible; 16.656 / 16.654 / 16.658 / 16.659 / 33.340 ms for N = 0/1/4/16/64 = 1/1/1/1/2 refreshes) |
+| Blocking question | **None left for the bloom proof of concept.** It is answered to decision grade: one chain is under half a millisecond by the CPU bound, so a 6-pass chain is at most ~3 ms of a 16.7 ms frame - affordable, whatever the exact figure. What is still open is the *player* side: the video path and the filename logging (v118) |
+| Unblocked by | the owner's next console run of **v118**, which is logging no source has supplied yet. BREW00103 stays built and unrun on purpose: it would tighten the bloom figure from "under half a millisecond" to a decimal, and no decision needs that (R27) |
+| Next action | run **v118** (`files/Ultimate-Media-Player-v118.pkg`, MD5 `349943cbd65ddb1580a9e47aec7de1b0`) and pull `app.log`: the `video: SRC` / `video: RATE` / `pull_rounds` lines are the only way to settle the 16 fps question |
+| Reflection (R26/R27) | Before that run: **already recorded** - the 16.7 ms display step, the uniform binding, vsync, packaging, logs, the module load, the memory class, the blob set (§7 settled list). **Genuinely new** - the file's codec, rate, duration and bitrate, and whether the `??????` names arrive mangled or the font lacks glyphs. Both need this console and no source has them |
+| Last console-verified | 2026-11-24, the BREW00102 log (GPU) and v117 (player) |
+| Published | `shanerm420/ps4-media-player` — source, docs, `AGENTS.md`, tools and the notes on `main` at `c55591b`, tag `docs-2026-11-24-0209`, CI `docs` green; **verified 2026-11-24** by comparing every file with the master copy (63 of 66 identical; the three differences are the publisher's pointer block, the regenerated `AGENTS.md` header, and the generated `font_inter.h` that is correctly ignored). The tree here is ahead of it by the R31 and predictions pass |
+
+**Focus: the GPU is reachable. Piglet ES2 runs on this console.** The v3 stage
+log answered everything it was built for on the first run, and went past the
+module question: the firmware's own `libScePigletv2VSH.sprx` and
+`libScePrecompiledShaders.sprx` loaded with `module_start() = 0` (handles 21 and
+22), `EGL 1.4` came up with a config, and the driver introduced itself as
+`GL_VERSION: OpenGL ES 2.0 Piglet` / `GL_VENDOR: Sony Interactive Entertainment
+Inc.` / `GL_RENDERER: Piglet`, with 935 bytes of extensions that include
+`OES_texture_float`, `OES_texture_half_float` and
+`EXT_color_buffer_half_float`. It presented 3,300 frames at about **120 fps**
+before the owner closed it with the PS button. Three of the six log paths
+opened, `/data` root included, so the empty v1 log was the `freopen`, not the
+disk. The path is **CONFIRMED**; what is still unmeasured is what a real
+visualizer costs on it. No player source was touched, and no visualizer is
+rewritten before the proof of concept is built and approved.
+
+**v117** is the player build on the console (header fix), rollback v116, then
+v115. The `??????` filenames, the settings screen, the search index and the
+visualizer overhaul were queued in the same message and are untouched.
+
+**Video: the 16 fps is not decoding.** This player does not use FFmpeg — video
+goes through Sony's `libSceAvPlayer`. During playback the log reads `paint=0.9`,
+`flush=35–39`, `present=6–19`, `conv_avg=5.91` against `avg=50–67 ms`, so the
+frame is spent in the presentation path (video blit plus the full-frame copy),
+not in the decoder. The `15,397 pull failures` are **empty polls, not failures**:
+the drain loop adds one on the first call that returns no picture and breaks, so
+every productive drain also adds one. The counter needs `pull_rounds` (already
+counted, never printed) before it can be read at all. What the log cannot say is
+the file's codec, nominal frame rate, duration and bitrate — that logging is the
+next step, and no player source has been touched.
+
+**Audit: nothing fits.** All eighteen looks were timed on the host: the fastest
+(LIQUID, 27.8 ms at step 1) is 1.7× over a 60 Hz frame and WORM is 4.5× over, so
+native resolution is unreachable by tuning — which is why the console lives at
+step 2/3, 15–20 fps at half or a third of the canvas. No look has a shader, a
+real bloom pass or a lighting pass. Ranked gaps and the two-target plan are in
+`files/round7/`.
+
+**Header: fixed in v117, and v117 ran.** The title and status lines measure
+themselves against the emblem's edge and end in `...` rather than running
+underneath it. The v117 log (83.9 s, all eighteen looks toured with Triangle)
+has no `long frame` after 7.2 s and no press over 66.8 ms, so nothing regressed;
+whether the `...` appears is still only answerable on the screen.
+
+**Pending from the owner — recorded as not reported, nothing assumed:**
+
+- What the Piglet sample showed on the television: **not reported.** The log
+  proves frames were presented (`STAGE 9`, 3,300 of them) and says nothing about
+  what was visible.
+- The v117 long-title header, whether the line ends in `...` before the emblem:
+  **not reported.**
+- The v116 look verdict — glint, spray, floor: **not given yet.**
+
+The console steps in §11 carry the exact things to look at, so these arrive with
+run reports rather than as questions.
+
+**v118 is built and waiting on the console.** Logging only — no player logic
+changed: `video: SRC` (brand, codec fourcc, bytes, resolution, duration,
+bitrate), `video: RATE` (the file's own rate from 30 frame timestamps),
+`pull_rounds` and `rounds_per_frame` in the `FILE` line and in the periodic
+summary, `Stop`/`Close`/teardown/open timings, and one `library: name` line per
+non-ASCII filename with its bytes, its UTF-8 validity and the atlas verdict.
+MD5 `349943cbd65ddb1580a9e47aec7de1b0`. Then the GPU proof of concept, then the
+two plans. No visualizer work before that proof is approved.
+
+Why this matters to the main goal: the video answer shows the same wall as the
+visualizers did — the present path, not the codec — and the audit turns the
+graphics standard into a ranked list for the first time.
+
+## 3. Roadmap
+
+Statuses: done, in progress, blocked, not started.
+
+**To a finished app**
+
+| # | Step | Status |
+|---|------|--------|
+| 1 | Confirm the environment (console, firmware, toolchain, data path) | done |
+| 2 | Install and test the OpenOrbis toolchain | done |
+| 3 | Hello-world PKG that installs and runs | done |
+| 4 | Window, input, and a real UI on the console | done |
+| 5 | File browsing, drives, media scan | done |
+| 6 | Music playback (MP3, EQ, spectrum, visualizers) | done |
+| 7 | Video playback (`libSceAvPlayer`) and subtitles | done |
+| 8 | The player interface: home, music, videos, pictures, settings, EQ | done |
+| 9 | Test with many file types and long sessions | in progress |
+| 10 | Package each build and hand it over with an MD5 | done (v116) |
+| 11 | Install and usage notes | done (`README.md`) |
+| 12 | Keep the PS4 knowledge base current for future apps | in progress |
+
+**Engine and performance work** (detail in `AGENTS.md` §Plan)
+
+| Item | Status |
+|------|--------|
+| Round 2 — flush fix, ladder judges the whole frame, Stage B machinery | done (v112) |
+| Round 3 — Liquid look: water body, depth, framing | done (v113) |
+| Round 3 — Liquid look: glass, floor, spray, crest glint | done (v114) |
+| Round 4 — the 467 ms Square freeze (sliced background bake) | **done, confirmed on hardware** (v116 run, 2026-11-23: worst paint 18.5 ms on 42 presses) |
+| Round 5 — glint brightness, spray clustered on crests, floor lifted | built and running on the console (v116); **look not yet judged on the television** |
+| A3 — stop copying the whole canvas and re-uploading it every frame | not started |
+| A4 — dirty regions for layers that change in part of the frame | not started |
+| Stage C — update slow layers less often | not started |
+| Stage D — cheap tricks that look expensive | not started |
+| Stage E — spend freed time at the step the console actually runs | not started |
+
+**Graphics standard work** (added 2026-11-23, §1). Eighteen looks exist:
+SPECTRUM, WAVEFORM, RADIAL, PULSE, MIRROR, BLOCKS, SCOPE, ORBIT, LIQUID, NEON,
+FLAG, DANCE, WORM, WINDMILL, DANCE 2, DANCE 3, RAVE DJ, TESSERACT — all drawn by
+our own software rasterizer into an SDL surface.
+
+| Step | Status |
+|------|--------|
+| Audit all eighteen looks against the standard; write down where each falls short | **done 2026-11-23** (host timings for all 18, ranked gaps, two-target plan — `files/round7/`) |
+| Research PS4 GPU capability per topic, five phrasings each; findings and disagreements into §9 | **done in substance 2026-11-24** — §9 graphics principles, `PIGLET-NOTES.md` and R25/R27 carry it; disagreements are recorded with their sources |
+| Decide the renderer: software canvas, GNM, or a hybrid — logged in §5 | **decided 2026-11-23**: Piglet ES2 on the GPU for the visuals, SDL keeps the chrome and the flip (§5); GNM, OpenGNM and the experimental stacks stay untested alternatives |
+| Prove one GPU path on the console: one effect (bloom is the candidate) | **done** — Piglet/GLES2 runs on 12.52 (EGL 1.4, `GL_RENDERER: Piglet`), and the bloom chain itself now draws: BREW00102 fetched `bright`/`blur1`/`blur2`, linked them, set 23/23 uniforms and rendered a real pass at 480x270 between 1080p targets |
+| Proof of concept: the **effect** (half-float targets + real bloom chain) on the GPU, in its own package | **done 2026-11-24** — BREW00094-103; cost bounded at under ~3 ms for a six-pass chain (R24/A6). The **look** port (LIQUID) is a separate decision and still needs the owner's go-ahead |
+| Move the biggest-gap looks onto it, in the order the audit sets | not started |
+| Reconcile Liquid's step 2 at 15 fps with the standard | not started (finding logged in §6) |
+| Header: now-playing line must not run under the emblem | **done in v117** (text fitted to the emblem's edge, ends in `...`); console look unconfirmed |
+| Video playback: why 16 fps, and what a pull failure is | **investigated 2026-11-23, no source change** — cause points at the present path; metadata logging is the next step (§11) |
+| Re-read the trade-off register every round and revisit what it lists | in progress |
+| **Verify one GPU path on the console, smallest working sample first** — piglet/GLES2 (shipped with the toolchain), then OpenGNM, then the experimental stacks; every result logged in §6 including failures | **done 2026-11-23, piglet/GLES2 confirmed on the first path tried** — both system modules `module_start() = 0`, EGL 1.4, `GL_RENDERER: Piglet`, 3,300 frames presented (§4, §9). OpenGNM, PS4GL_GNM and ps4-kit are not needed and stay untested |
+| Port or reimplement one MilkDrop-style warp-feedback effect once a GPU path is proven | **unblocked 2026-11-23**, and it belongs in the proof of concept: framebuffer fetch is absent, so it is ping-pong FBOs. Licence check first for projectM presets; from-scratch stays the default. **The bloom chain is the first effect through this path.** |
+| v118 — logging only: video codec/fourcc/rate/duration/bitrate/resolution at open, `pull_rounds` in the summary, the raw bytes and glyph check for a `??????` name, open/teardown stage timings | **built 2026-11-23** (`349943cbd65ddb1580a9e47aec7de1b0`), awaiting the console run (§11 Round 1) |
+| GPU proof of concept — one look with the biggest visible gain, half-float bloom chain, per-band audio analysis, own package at 1080p | after v118 (§11 Round 2) |
+| Round 3 — plans only: SDL/Piglet handover, and a 60 fps budget for all eighteen looks | after Round 2 is logged (§11 Round 3) |
+
+**Optional feature candidates** (ideas from studying other PS4 players, §9; ranked
+later, not committed): resume position / continue watching; favorites and last
+played; playlists by media type; external subtitle files with proper font
+coverage; multiple audio and subtitle tracks; network streaming over HTTP or
+FTP; cover art; safe USB-removal handling; a full settings screen. They wait
+behind the graphics work — the goal is quality first.
+
+## 4. Build log
+
+The dated log moved to `../HISTORY.md` on 2026-11-24: it had grown to 38 lines of
+narrative the spine should not carry (G9 - a file that only grows stops being read).
+The present is §2, the decisions are §5, and the dated history now lives with the rest
+of it in `HISTORY.md`. Nothing was deleted.
+
+Recent entries, one line each: BLOOM 1-4 built (BREW00095-098); the bloom chain
+compiles then dies at the first frame; BREW00097 measures submission, not GPU cost;
+a wrong uniform type breaks the blur; Piglet confirmed on 12.52; R32 adopted.
+## 5. Decisions
+
+Each entry: what was chosen, why, and what was rejected.
+
+- **Native PS4 homebrew with OpenOrbis, C11, no Sony SDK.** Rejected: porting an
+  existing player, or a scripting layer — both cost more than they save and
+  neither teaches the platform.
+- **SDL2 (the SDL-PS4 port in the toolchain) for UI and drawing.** Rejected:
+  raw GNM — a month of work before a first picture.
+- **Our own rasterizer for the visualizers** (`src/vis_art.c`) rather than
+  pre-rendered video or shaders. Rejected: per-style shaders (the JS/GL era of
+  the project) because the PS4 path is a software canvas. **Under review since
+  2026-11-23**: the graphics standard in §1 requires the best the console can do,
+  and the audit decides whether the software canvas is still the right home for
+  any of the eighteen looks. Not overturned yet — nothing has been measured
+  against a GPU path — but no longer settled either.
+- **The graphics standard outranks the software canvas (2026-11-23).** Chosen:
+  measure every look against what the console's GPU can do and move rendering
+  onto it where that wins, rather than keeping on tuning the rasterizer. The
+  requirement is the owner's; the plan is the audit's. Rejected: declaring the
+  current look finished because the software path is what exists — that would
+  answer the wrong question.
+- **Quality trade-offs are logged, dated and revisited (2026-11-23).** The
+  quiet defaults are decisions, not backgrounds: the quality ladder's step-2
+  budget of 88 ms, `budget_ms = 62` as a manual way to prefer 20 fps over
+  sharpness, and the stepped canvas at steps 2 and 3 all sit in §5 and §6 with
+  their reasons. Rejected: leaving them implicit in `appcfg.c` defaults, where
+  they read as design rather than as choices that expired.
+- **GPU paths are tested in a fixed order, smallest sample first (2026-11-23).**
+  piglet/GLES2 from the toolchain first, because the headers and a sample are
+  already on this machine; then OpenGNM and its shader compiler; then the
+  experimental stacks. Chosen so that a failure at each level is informative and
+  cheap. Rejected: starting with the most capable stack — an unproven Vulkan
+  layer on an unproven firmware is the worst place to discover a problem, and
+  nothing about it would be measurable on the console first.
+- **No MilkDrop-style effect until a GPU path is proven (2026-11-23).** The
+  warp-feedback idea is recorded as a candidate (§9), not a plan. Rejected for
+  now: porting projectM wholesale — its presets are shader-and-equation driven
+  and its licence needs checking, and it assumes a GPU path that does not exist
+  here yet.
+- **The GPU test is its own package, not a player build (2026-11-23).** The
+  sample ships under `BREW00093` with its own content id, so it cannot overwrite
+  the player and it does not consume a version number: the player is v116 now
+  and the next player build is v117. The player's source was not touched.
+  Rejected: folding the test into the player — it would put an unproven driver
+  path into the app that has to work, and a crash would be ambiguous between the
+  sample and the player.
+- **No visualizer is rewritten for the GPU until a path is confirmed on this
+  console (2026-11-23).** A failure of this sample is a fact about the sample,
+  not a verdict on the console: log it, then test the next alternative one at a
+  time, in the §9 order. Rejected: starting the port against piglet now — if the
+  module or symbol situation is wrong at 12.52, the port is wasted work on the
+  wrong API.
+- **Header: fit the text to the emblem's edge (2026-11-23).** `text_fit()` trims
+  and adds `...`, using the same geometry the emblem is drawn from so they cannot
+  drift. Rejected: scrolling the line — motion in an otherwise still header, and
+  it needs its own timer; hard clipping with no mark — it looks like a broken
+  filename, which is what was reported.
+- **`[quality] budget_ms = 62` stays an option, not a change (2026-11-23).** It
+  would move Liquid to step 3: 20 fps at a third of the canvas instead of 15 at
+  half. Recorded because it is the only interim lever that exists; rejected for
+  now because it trades sharpness for smoothness and still misses the standard.
+- **A 960×540 room baked once per skin, upscaled once, then blitted unscaled.**
+  Rejected: drawing the room live (325 ms a frame on console) and blitting a
+  scaled texture every frame (45 ms a frame, measured).
+- **Built in slices, not all at once.** Rejected: pre-baking all four skins at
+  startup (+1.3 s of launch) and making the bake cheaper by changing its maths
+  (would change the look, and float rounding is not free to prove).
+- **Quality ladder judged on the whole frame, not the rasterizer alone**
+  (`vis_art_frame_ms()`). Rejected: judging paint only — it kept looks at a step
+  the frame could not afford.
+- **Keep the visualizer's cheap elements at every step.** Rejected: gating by
+  `s_paint_step`, because the console settles at step 3 and never climbs back, so
+  gated elements simply never appear.
+- **Judge looks with the host renderer at a pinned step (`VIS_STEP`) instead of
+  waiting for console screenshots.** Rejected: asking for a capture of every
+  change — the round trip is slow and the host runs the same code.
+- **Bench an untouched look as a drift control.** Adopted after the host was
+  measured 6–10% slower between sessions, which made raw before/after numbers
+  meaningless in both directions.
+- **FTP is the only delivery path, both directions.** Packages go to
+  `/data/pkg/` and are installed from Package Installer's Hdd source; logs,
+  screenshots and `config.ini` come back over the same connection. Rejected:
+  USB (the common tutorial route) — the owner does not use it, and writing steps
+  for a method nobody runs is how a build loop rots. Also rejected: pushing
+  packages through PayLoader/BinLoader on 9090, which sends payloads, not
+  packages.
+
+- **GPU test logging is its own package and its own module (2026-11-23).**
+  The second logged build writes with `sceKernelOpen`/`sceKernelWrite`/
+  `sceKernelFsync` from the first statement of `main()`, tries six locations and
+  records every return code, redirects fd 1 and 2 at the first file that opened,
+  fsyncs each line, and heartbeats for 30 s. It keeps title id BREW00093 and the
+  same content id so it replaces the earlier logged build, and it uses no player
+  version number. Rejected: a second `freopen` variant — the first failed
+  silently, and a second guess would fail the same way with the same silence;
+  rejected: logging built into the player — the player is not under test and its
+  source stays untouched; rejected: USB-only output — the owner's loop is FTP
+  and no stick is part of it, so USB is a fallback tried third, not the plan;
+  rejected: a thread that writes asynchronously — one more moving part in a
+  build whose only job is to be readable.
+- **The stage log is v3, and v2 is superseded without ever running
+  (2026-11-23).** Numbered stages plus a frame line every 60 frames turn a
+  truncated file into a location, which is the whole point of the build. v3
+  keeps the kernel-call writer, the six-path table and the fsync per line.
+  Rejected: sending v2 as well — two packages with the same title id means the
+  second install silently replaces the first, so there would be one result and
+  two candidates; rejected: drawing the stage number on screen — it needs a
+  texture and a program the sample does not have, and a clear-color tint would
+  mean editing `Render()`, the drawing path this build must not change;
+  rejected: creating a test half-float render target to prove support — a
+  fragile driver is exactly what this run is measuring, so the extension list
+  and the limits answer it without allocating anything.
+- **Piglet/GLES2 is where the visualizer work goes (2026-11-23).** Confirmed on
+  this console rather than argued: EGL 1.4, a config chosen, `GL_RENDERER:
+  Piglet`, ES2 shaders with derivatives and float/half-float texturing, and
+  120 fps on the sample. The plan is one look on the GPU with half-float render
+  targets and a real bloom pass, in its own package, measured before anything is
+  ported. Rejected: starting with GNM or OpenGNM — the smallest sample already
+  works and OpenGNM's shader compiler is validated on 9.00, not 12.52, so it
+  would add risk before any picture; rejected: moving the UI onto GL as well —
+  the chrome, the text and the flip work today, and the 21.6–24.5 ms present
+  floor stays whatever draws above it; rejected: rewriting a visualizer now —
+  the cost of a GPU look is unmeasured, and an unmeasured rewrite is how a
+  renderer change becomes a rewrite of all eighteen looks.
+- **The round order is logging, then the proof of concept, then the plans
+  (2026-11-23).** v118 prints the video and filename facts with no logic change,
+  because that round cannot break rendering and it answers two open questions at
+  once; then one GPU look measured at 1080p; then the handover plan and the
+  60 fps budget written from those numbers. Rejected: the proof of concept
+  first — it would leave the video and `??????` questions waiting on a renderer
+  change for no gain; rejected: writing the 60 fps budget before Round 2 — a
+  budget with an unmeasured cost per pass is a wish list, and the principles
+  section forbids it.
+- **The proof of concept carries no player version number (2026-11-23).** It
+  has its own title id and its own name; v118 stays the player's next number.
+  Rejected: calling it v119 — it would read as a player build in the package
+  list, and it cannot replace the player anyway.
+- **Every graphics decision is a rule with its evidence (2026-11-23).** §9
+  *Graphics principles* records the loop and the status of each rule, and no
+  later decision may repeat a rejected approach without a new reason. Rejected:
+  deciding by taste or by what the host preview looks like — host numbers rank
+  approaches, the console's numbers decide them.
+
+## 6. Problems and fixes
+
+Check here before trying a fix; do not retry a failed one without a new reason.
+
+| Problem | Cause | What worked / what did not |
+|---|---|---|
+| **The logged GPU test's log came back empty** | unknown, and v1 could not report on itself: its `freopen` return was discarded | **Answered 2026-11-23, in the useful half.** Verified: v1's `eboot.bin` carries `/data/piglet-gpu-test.log`, so the redirect was compiled in; the owner says both packages ran the same way. Causes, most to least likely: (1) the redirect failed silently — not the path, which v3 proved writable, but `freopen`/stdio in this libc — and every line went to a stdout nobody can read, which fits "it ran the same as the shipped build"; (2) the pull happened before any flush, or in a transfer mode that produced a 0-byte local file; (3) a crash or hang before the first print; (4) output on a path the redirect does not cover. Ruled out: a wrong package — the archived pkg's eboot contains the path string. v3 answered both open halves: three of its six paths opened, `/data` root included (`path OK /data/piglet-gpu-test-v3.log (fd 5)`), so the filesystem was never the problem; what failed in v1 is the `freopen` on stdout. Nothing else in the run was lost — v3 wrote 3,300 frames' worth of log. **Three other logs the owner found — `Loader_Logs.txt`, `memory.log`, `UnityOrbisBridge.log` — were read and ruled out** (§9): none of them mentions BREW00093, Piglet, EGL or GL. |
+| **Two files named `piglet-gpu-test-v3.log` came back, one 1,137 bytes shorter** | the logger opens three sinks and redirects fd 1 at the first, so only that one also receives the sample's own `printf` output | **Explained, not a fault.** Both files are the same run to the millisecond (first line 0.026, last line 28.104, the same 56 heartbeats), so they cannot be two runs and neither is truncated. The 8,343-byte file carries `Loading modules...`, `GL_RENDERER: Piglet` and the uniform dump, so it is `/data/piglet-gpu-test-v3.log`; the 7,206-byte copy is one of the two secondary sinks (`/data/pkg/` or `/data/ultimate-ps4-media-player/`), which are byte-identical to each other — which one it is depends on the folder it was pulled from, and both hold every logger line. Next time: one sink, plus the sample's own output through the same fd. |
+| `boot: libGLESv2 rc=0x80020002`, then `SDL_GL_LoadLibrary No dynamic GL support in current SDL video driver (PS4)` | there is **no `libGLESv2.sprx`** on this console's system paths — `0x80020002` is the same code the v3 log gets for an unmounted USB stick | **Not a defect and not a path problem.** Piglet is the GL implementation here and is loaded by name (`libScePigletv2VSH.sprx`, `module_start() = 0`), not through SDL's `libGLESv2` lookup. GL work links Piglet directly, as the sample does; SDL keeps the window, the chrome and the flip. |
+| **Bloom POC exits at the first `glViewport` with code 502** | the sample's `Render()` reads `glGetError` after its own viewport call; 502 is decimal 1282 = `GL_INVALID_OPERATION` | **Diagnosed 2026-11-24, fixed in BREW00096.** `CHK pre-render` is clean every frame and `CHK post-render glerr=0x0502` fires every frame: the error belongs to the sample's own draw, not to our passes. BREW00096 runs the loop instead of exiting, because the pre-render check drains the pending error first. Still to fix: the sample's draw itself, which a port cannot inherit. |
+| **Bloom 3 drove the blur with a vec4 where the shader wants a vec2** | `u_blurRadius` is `GL_FLOAT_VEC2` (0x8B50); `glUniform4f` was rejected | **Fixed twice over.** A2 corrected the type; A5 found the real cause and BREW00102 confirms it: all 23 `SET` lines read `accepted` once the program is bound. The `glGenQueries`-without-`EXT` lead was taken up in BREW00103, which asks for the entry points and says so in the log if they are absent. |
+| **The v118 `video: SRC` line prints `codec=` empty** | the `stsd` scan in `src_probe()` matched something that is not a sample entry, so the fourcc came out as NUL bytes | **Open, cosmetic.** `brand=isom` and `bytes=508151141` are correct, so the file and the probe agree; only the fourcc is blank. Real answer for this file is AVC/HEVC in an `isom` container, but that is inference — the next build should read the box tree properly or drop the field. |
+| **The catalogue package's log header names the wrong title** | `gputest_log.cpp` carried the v3 string | **Fixed from BREW00101 on** (banner v7, then v8/v9); only the old catalogue still shows it. Historical, cosmetic. |
+| **Round 2's bloom chain cannot be written as GLSL** | no shader compiler here; Piglet takes precompiled blobs from `libScePrecompiledShaders.sprx` | **Gate passed 2026-11-24.** The blobs exist and run: the probe fetches `texmap`, `bright`, `blur1`, `blur2` (`PROG … link=1`, six uniforms each on the blurs) and draws a real chain at 480x270 between 1080p targets. BREW00094's catalogue dumps the table. No GNM detour is needed for bloom. |
+| 467 ms freeze on Square (three sessions) | `bg_build()` rebuilding the room for a new skin inside the key-press frame | **Fixed in v115, confirmed on hardware 2026-11-23**: 42 presses, no frame over 50.1 ms, worst paint 18.5 ms, paint 9.2–11.8 ms. Did not work: blaming the library list — the list build is ~2 ms and the log shows the time inside `paint`. |
+| Filenames in non-Latin scripts show as `?????? ???????? ?` in the list | the bitmap UI font has no glyphs for them, or the name arrives in a non-UTF-8 encoding | **Open**, seen in the 2026-11-23 screenshot (one row of the videos tab). Two candidates to separate first: the name reaching the model already mangled, or the font lacking the glyphs. |
+| A long now-playing line runs under the PS4 emblem in the header | `header()` drew title and status from `SAFE_X` with no width limit while the emblem owns the right of the same band | **Fixed in v117**: `text_fit()` fits both lines to 1116 px (the emblem's edge less margins) and ends long text in `...`. Host: builds, tests pass, short titles render unchanged. **Long-filename case needs the console.** |
+| **Video: 16 fps, and `pull_fail=15397`** | not the decoder and not a real failure count — see §9 "Video decode, verified" | **Investigated, no fix.** The bound is the present path (`flush` 35–39 ms + `present` 6–19 + `conv` 5.9); `pull_fail` counts empty polls by construction. Next step is logging, not code: codec, nominal fps, duration, bitrate, and `pull_rounds`. |
+| **No look fits a 60 Hz frame at native resolution, even on the host** | the CPU rasterizer's cost per pixel; nothing is GPU-backed | **Open, and it is the audit's first gap** (§6 audit rows, `files/round7/`). Fastest look 27.8 ms at step 1, slowest 75.4 ms; console multiplies that by 2.2–4. |
+| Water one flat cyan with vertical bands | body lit by the per-column crest value, which pins at 1 across the tank | **Fixed in v113**: light from a smoothed height, palette scaled to the swell. |
+| Glass read as a thin strip on console | panes, glow and pane highlights gated behind `s_paint_step <= 2` | **Fixed in v114**: those elements draw at every step. |
+| 45 ms `flush` on every screen | blitting a *scaled* full-screen texture each frame | **Fixed in Round 2**: bake at 960×540, upscale once, blit unscaled. |
+| Step-2/3 water detail lost | stepped canvas upscales 3× | **No longer accepted** under the §1 graphics standard (2026-11-23): a third-of-frame canvas is exactly the "low resolution" the requirement rules out where a better method exists. The audit says whether the fix is a GPU path or a cheaper full-resolution one; until then it is an open gap, not a settlement. |
+| **Video plays at 16 fps, `pull_fail=15397` against `pull_ok=2592`** | unknown — one summary line from the 2026-11-23 run is all there is so far | **Open, investigate first.** `libSceAvPlayer` pulled 2,592 frames and failed 15,397 in 127.7 s of a 2153-frame file; `conv_max` 26.6 ms. Nothing yet separates a slow decoder pull, a starving reader and an expected pull-fail counter. Needs its own log at `log level=2` before any change. |
+| **Liquid settles at step 2 = 15 fps** (66.7 ms, paint 33.4) | the ladder's step-2 budget is `quality.budget_ms` 88 ms, so 66.7 is "fine" and it never tries step 3 | **Open, and it conflicts with §1.** The `budget_ms = 62` dial trades sharpness for 20 fps — a trade-off, not a fix. Either the look gets cheaper at step 2 or rendering moves to the GPU; the audit decides which and §5 records why. |
+| Four long frames remain: first visualizer frame 116.8 ms, 383.8 and 250.2 ms around a video open and close, six boot frames 119–661 ms during the 12,376-file scan | one-time bakes, player teardown, startup scan | **Accepted for now** (2026-11-23) as none is on a key press and none repeats. **To be re-checked by the audit**, which may call any of them unacceptable under §1. |
+| **No GPU path has been tried, so "the best the console can do" is unmeasured** | all eighteen looks go through `src/vis_art.c` and an SDL software surface | **Open, the biggest gap in the project.** Index of candidate paths in §9; test order decided in §5. Not a defect yet — a missing measurement. |
+| Piglet/GLES2 may need system modules `libScePigletv2VSH.sprx` and `libSceShaccVSH.sprx` | four sources, four answers — see §9 "The module question" | **Unresolved, and now testable.** The sample loads `libScePigletv2VSH.sprx` and `libScePrecompiledShaders.sprx` from `/<sandbox>/common/lib/` via `sceKernelLoadStartModule` and prints `Piglet module_start() = <rc>`; `sce_module/` in its PKG contains only `libSceFios2.prx` and `libc.prx`. So the sample expects the **system** copies. The console run decides it. |
+| **`glUniform2f` refused at the location `glGetUniformLocation` returned** | **not the location at all: no program was bound.** `glUniform*` acts on the current program (ES2 spec), so a set was refused (`Invalid program!`, BREW00101) or hit another program's slot (`different types`, 97/98) | **Fixed in BREW00102, measured:** `glUseProgram` first, then 23/23 `SET accepted` and a real bloom on screen. BREW00100's probe-and-skip stays as a diagnostic, not as the fix. [superseded A4], [superseded A5] |
+| `make: clang++: No such file or directory` when building a toolchain sample | the conda clang here provides `clang` → `clang-18` with no `clang++` | **Fixed**: `make CCX=clang`. Same for the player? No — the player's Makefile never uses `clang++`. Also seen: the compiler cache is empty after a workspace restore, and `bash ~/bootstrap-toolchain.sh` restores it in about two minutes. |
+| `PkgTool.Core` aborts: `Couldn't find a valid ICU package installed on the system` | an old .NET binary on a modern Linux without ICU | **Fixed**: `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`. The project's own Makefile already documents this; the toolchain samples assume it is in the environment. |
+| `PkgTool.Core pkg_build` aborts: `No usable version of libssl was found` | the same .NET binary links against OpenSSL 1.1 | **Fixed**: `LD_LIBRARY_PATH=$HOME/openorbis/ssl11/usr/lib/x86_64-linux-gnu`. |
+| Sample README says Title ID BREW00071, its Makefile says BREW00093 | README not updated when the Makefile was | **Not a blocker**: the built PKG carries BREW00093 and `IV0000-BREW00093_00-PIGLETGPUR000000`. Trust the Makefile, and the PKG, over the README. |
+| Video at 16 fps: could be the same class of problem as pPlay's software decoding | pPlay's author states it uses a software decoder and that 4K lags; our summary shows 15,397 pull failures | **Not yet evidence, only a lead.** Our path is `libSceAvPlayer` (hardware-assisted by design), so a software-decoder explanation does not transfer directly. Recorded so the hypothesis is not invented twice. |
+| `1 key missing: liquid.surface_lift` warning | user's `config.ini` predates v113 | Expected: the default applies. Not a bug. |
+| Host preview run printed nothing and segfaulted | stdout was buffered; the crash lost it | Use `stdbuf -o0`, or an AddressSanitizer build. |
+| Heap use-after-free in the sliced bake | the upscale helper's tail (texture upload and `free`) was left inside it during the split | **Fixed**; caught by ASan on `one 0` before packaging. Worth repeating: build with `-fsanitize=address` after splitting a function. |
+| `preview` BMP "Couldn't open" | relative paths resolve against `preview/`, so `../../_scratch` is one level too high | Use `../_scratch/...` from `preview/`. |
+| BREW00098 config C dies on a uniform type | `[PIG]E-glUniform2f:8390 - illegal to set uniform data with different types` during the blur setup, followed by `[PIG]E-glUniform1fv:8073 - Failed to retrieve uniform info!` — a uniform is being set with the wrong type or the wrong name (A2 fixed `u_blurRadius`; the bloom programs' own uniforms were never type-checked) | not fixed yet. The fix is instrumentation first: log every uniform of `bright`/`blur1`/`blur2` at link time exactly as the texmap program already does, then set from those types. Do not guess a second time |
+| A GL error from an earlier call is read as a later one | the log ends `glViewport failed: 502`, but `glViewport` did not fail: GL errors are sticky and the uniform calls above had already raised `0x0502` | check `glGetError()` before each stage, not only after the call being tested; the first read after a pass must be reported as "error inherited from the previous stage" when it is |
+| The whole run stops at the first failing config | the probe bails out of the loop, so D and E never ran and the run produced two numbers instead of five | a probe must isolate each config: clear the error, run, record `err`, continue. One bad config voids its own row and nothing else (G1's degrade rule applied to a test) |
+| Nothing on screen said what happened | the app exits to a clean shutdown with no visible result; the only record is the log file | the probe draws its own result: one row per config, PASS/FAIL and milliseconds, phasers showing the current config. If it dies, the last drawn row says where |
+| Differencing cannot see the work | A empty 8.19 ms and B scene 8.32 ms, both the present floor; any draw cheaper than ~8 ms vanishes into the flip | measured in §9 R20. Measure by repetition: N passes per frame, fit the line, use the slope |
+| The handover tree relocated the repository's README | the published tree's `README.md` is a six-line pointer whose links are written for the repository root; the instructions told the publisher to move it to `docs/ROOT-POINTER.md`, where `docs/README.md` and `AGENTS.md` no longer resolve | found by the publishing assistant before it pushed, not by us. `tools/check-links.py` reported `2 problems` on the relocated copy. The publisher now leaves the existing README alone and never copies the pointer over it, and `tools/push-docs.sh` keeps the original content and prepends the block instead of overwriting. Lesson: a generated file is verified in the place it will live, not the place it was made |
+| **The GPU probe duplicates what the player already has** | `_scratch/gpu-test/bloom*/gputest_log.cpp` is a bespoke logger and the results panel is a hand-rolled glyph-quad renderer, while the player already ships `src/applog.c` (rotation, uptime stamps, levels) and its own UI text drawing | **Open, and now a rule (R29).** The duplication was justified while the probe was a 30-line throwaway; it is not justified now. Next probe build either links the player's `applog.c` and text renderer, or states in one line why the probe's copy must stay. Nothing is rewritten before that line exists |
+| The published index said `measured` with no evidence | the generator validated the evidence cell while writing a different field, so 14 measured rules shipped with an empty `evidence` value in `files/RULES.index`; the CI workflow asserts the opposite, so the published copy would have failed its own gate | found by the outside reviewer, which refused to push a red build. The index now writes the evidence cell, and the generator fails if a measured rule reaches the file without evidence, so the local check and the CI gate test the same thing |
+| Handover prose stated counts that drift | the instructions said 60 files and 52 pages; the next build was 62 and 54, so a correct archive looked tampered with | prose no longer states counts. `CHECKSUMS.txt` is the statement of contents and the link checker's exit status is the statement of health |
+
+## 7. Environment
+
+Recorded **2026-11-23** from the owner's own answers. These are console facts as
+reported, not documentation.
+
+**Re-confirmed by the owner 2026-11-23, no differences:** PS4 Pro, firmware
+12.52, GoldHEN v2.4b18.14, payload and loader present, **all files including
+PKGs moved by FTP on port 2121**, packages installed from `/data/pkg` through
+Package Installer with source **Hdd**. Every field below matches that answer.
+
+**Platform scope: this is PS4 software, and it is for every PS4** (owner-stated
+2026-11-24). The target is the **PS4 family — base, Slim and Pro — as one
+platform**, not one machine. Every model runs the same Orbis OS and the same
+interfaces this project uses (Piglet/GLES2, `sceAudioOut`, `libSceAvPlayer`,
+`scePad`, the same package format and install path), so **software that works on
+PS4 runs on all PS4s**, and nothing may be designed around a Pro-only behaviour.
+A model that differs in clocks or GPU capability changes only how fast the same
+code gets there, never what it does. Consequences, kept as rules:
+
+- **One package for every model.** No model-specific builds, switches or paths.
+- **A Pro number is an upper bound.** Every measurement names the model it ran on
+  (this owner's console is a Pro, §7); the base PS4 is the floor a budget must
+  fit, so a look or feature that only holds on a Pro does not hold.
+- **Per-console prerequisites are not software requirements.** Firmware 12.52,
+  GoldHEN and FTP are this machine's setup, recorded in §7; the software claims
+  nothing beyond PS4 + the APIs above. Rule R28.
+
+**Settled hardware — do not spend a console run confirming any of this** (R27).
+Each line is a fact with its source; a run is only earned for behaviour that is
+absent from this list.
+
+| Fact | Source |
+|---|---|
+| 1080p60, vblank 16.67 ms, flips per vblank, `sceVideoOutSetFlipRate` divides it; **frames land on whole 16.7 ms multiples** | `shadPS4` videoout; `AGENTS.md` measurement rules; BREW00102 |
+| Piglet = OpenGL ES 2.0 / GLSL ES 1.00, EGL 1.4; `eglSwapInterval(display, 0)` already set by the sample | BREW00093 log; `PigletApplication.cpp:182` |
+| `libScePigletv2VSH` + `libScePrecompiledShaders` load from `/<sandbox>/common/lib/`, `module_start() = 0`; **no `libGLESv2.sprx`** (`0x80020002`) | BREW00093, BREW00095-103 |
+| Blobs `texmap`, `bright`, `blur1`, `blur2` exist and link; bloom needs no GNM path | BREW00102 log `PROG … link=1` |
+| A uniform is set on the **bound** program; `glUseProgram` first | ES2 spec; A5; BREW00102 23/23 accepted |
+| No 32-bit float targets or float blending; half-float targets present; `EXT_disjoint_timer_query` advertised | §9 GPU facts; BREW00103 |
+| Shader compilation 110-260 ms each, no disk cache (`GL_PROGRAM_BINARY_LENGTH` rejected) | `shipofharkinian-ps4` (`researched only`) |
+| `gde` class: ~768 MiB direct / ~255 MiB flexible | same source, `researched only` (measure only if a port needs the number) |
+| Packages: FTP 2121 → `/data/pkg/` → Package Installer `Hdd`; `param.sfo` needs 11 entries or CE-33481-9 | owner; R23 |
+| Logs: `sceKernelOpen`/`Write`/`Fsync`, one path in `/data/Alpha PS4 test kit/`, sweep old ones | §6; R22; BREW00102 |
+| Pad opens as a plain joystick, button numbers as §9 records | v111+ logs |
+
+**GPU test artifact (2026-11-23):** built from OpenOrbis toolchain **0.5.2**
+(CHANGELOG head; not a git checkout), clang 18.1.8, sample
+`samples/piglet` unmodified. Package **`PIGLETGPUR000000`**, title id
+**BREW00093**, title "OpenOrbis Piglet Sample", 6,619,136 bytes, MD5
+`0204bfbc2c718512f3a101b1fc623caf`; first logging variant MD5
+`a635023753c6be4c0b57829b39c5c7a2` (log came back empty); **second logging
+variant, kernel-call writes, MD5 `3f7555a468962dd9e97150f4b3bcb95a`, title
+"GPU Test v2 (piglet log)", version 2.00, never run); **third logging variant,
+stage log, MD5 `4d556822b249fcf1c3f55a044d806fa2`, title "GPU Test v3 (stage
+log)", version 3.00 — this is the one to run**. All four in `files/`. The player is unaffected: different title id, no player version number used.
+
+**GPU result (2026-11-23, firmware 12.52, GoldHEN v2.4b18.14, package
+`IV0000-BREW00093_00-PIGLETGPUR000000`, title id BREW00093, title "GPU Test v3
+(stage log)", version 3.00, MD5 `4d556822b249fcf1c3f55a044d806fa2`):** the run
+succeeded. `Piglet module_start() = 0 (0x00000000), handle 21` and
+`PrecompiledShaders module_start() = 0 (0x00000000), handle 22`, loaded from
+`/BgZIO2hcQg/common/lib/`. `EGL_VERSION: 1.4`, `EGL_VENDOR: Sony Interactive
+Entertainment Inc.`, `eglChooseConfig: 1 config(s)`. `GL_VERSION: OpenGL ES 2.0
+Piglet`, `GL_VENDOR: Sony Interactive Entertainment Inc.`, `GL_RENDERER:
+Piglet`, `GL_SHADING_LANGUAGE_VERSION: OpenGL ES GLSL ES 2.0`,
+`GL_MAX_TEXTURE_SIZE: 4096`, `GL_MAX_RENDERBUFFER_SIZE: 4096`,
+`GL_MAX_VIEWPORT_DIMS: 4096 x 4096`. Extensions present: `GL_OES_texture_float`,
+`GL_OES_texture_float_linear`, `GL_OES_texture_half_float`,
+`GL_OES_texture_half_float_linear`, `GL_EXT_color_buffer_half_float`,
+`GL_OES_standard_derivatives`, `GL_EXT_shader_texture_lod`,
+`GL_EXT_texture_filter_anisotropic`, `GL_EXT_disjoint_timer_query`,
+`GL_SCE_piglet_sync`, `GL_SCE_piglet_shader_binary`,
+`GL_SCE_orbis_canvas_texture`. Absent: `EXT_color_buffer_float`,
+`WEBGL_color_buffer_float`, `EXT_float_blend`, `EXT_shader_framebuffer_fetch`,
+`NV_shader_framebuffer_fetch`, `EXT_sRGB`. Presented 3,300 frames in 27.5 s =
+**119.9 fps**, closed with the PS button (no `STAGE 10`). Log inside the
+package: `/data/piglet-gpu-test-v3.log`, 8,343 bytes.
+
+**Not observed by the owner, and not to be inferred:** what the sample showed on
+the television, whether the v117 header ends in `...` before the emblem, and the
+v116 look verdict. All three are listed as pending in §2.
+
+- Console: **PlayStation 4 Pro**, jailbroken.
+- Firmware: **12.52**.
+- Jailbreak: **GoldHEN v2.4b18.14** (SiSTRo's beta line, published on his Ko-fi
+  shop — see §9, the GitHub release page is out of date for this console). A
+  payload and a payload loader are both on the console.
+- The app's own boot line reads `firmware 12.508.001 (0x12508001)`; that is the
+  12.5x platform's version string and it is what our logs will show.
+- Direct memory pool reported by the console: 4608 MB.
+- **Transfer: FTP only, for everything, both directions.** GoldHEN's built-in
+  FTP server (**port 2121**) carries packages to the console and logs,
+  screenshots and `config.ini` back. No USB stick and no other method — do not
+  write steps that assume one.
+  - **Packages:** upload `Ultimate-Media-Player-vNNN.pkg` to `/data/pkg/` on the
+    console, then install it from **Package Installer** with the package source
+    set to **Hdd [`hdd:/data/pkg/`]**. FTP only puts the file there; the
+    installer is what installs it.
+  - **App data read back** over the same connection:
+    `/data/ultimate-ps4-media-player/` — `app.log`, `app.old.log`, `config.ini`,
+    `shots/` (BMP captures, v111+).
+  - **`config.ini`** is edited in place over FTP; R3 in the app reloads it.
+  - The FTP server must be switched on in **GoldHEN → Server Settings**; it
+    needs a network connection of any kind. Payload/BinLoader on 9090 and klog
+    on 3232 are separate services and neither is needed for packages.
+- Build machine: Linux x86_64, bash. Toolchain Clang **18.1.8**
+  (conda-forge clangdev build, per the console's own build line).
+- Toolchain root `$HOME/openorbis/PS4Toolchain`; pkg signing library
+  `$HOME/openorbis/ssl11/usr/lib/x86_64-linux-gnu`; host SDL and friends in
+  `$HOME/hostdeps`; compiler cache `$HOME/.cache/ps4-toolchain` (can be wiped
+  between sessions; `bash ~/bootstrap-toolchain.sh` restores it in 2–4 min).
+- Build command, preview command and test command: `AGENTS.md` §Build and check.
+- Project layout: `files/ps4-media-player/` (source), packages in `files/`,
+  round notes in `files/roundN/`, source snapshots in `files/archive/`.
+
+### Rules tooling (added 2026-11-24)
+
+Four programs keep these files honest, and none of them writes prose:
+
+- `tools/check-manifest.py` — 28 checks: section order, rule ids, cross
+  references, superseded tags against amendments, MD5s against `files/`,
+  read-order headers, byte budgets, AGENTS figures that repeat a measurement
+  without citing the section that owns it, and a status board older than the
+  files it summarises.
+- `tools/rule-index.py` — writes `files/RULES.index`: every rule with its status
+  and evidence. It fails a `measured` rule that cites no log, file, MD5 or build
+  id, and a figure with no status word.
+- `tools/status.py` — `make status` writes `files/STATUS.html`, the one screen
+  that answers healthy / where we are / what waits on the console. Generated,
+  never hand-edited; `make check` fails when it is older than the rules files.
+- `_scratch/linttest/mutate.py` — breaks one thing at a time and proves each
+  checker notices it: 12 of 12, including that the build stamp does not read the
+  clock.
+
+`tools/publish-docs.py` builds the linked publishing tree (rules per page,
+manifest in twelve parts, §-references rewritten to real links) and
+`tools/check-links.py` fails on a broken relative link or heading anchor;
+`tools/push-docs.sh` publishes it bottom-up, three commits, leaves first.
+
+`tools/buildstamp.py` fixes `__DATE__`/`__TIME__` at compile time, so two builds
+of one source state produce the same package and an MD5 identifies source again.
+
+Budgets, so a document that only grows stops being read: `MANIFEST.md` 128 KB,
+`AGENTS.md` 40 KB (and G9's line ceiling), `HISTORY.md` 96 KB,
+`STATUS.html` 32 KB.
+
+## 8. Resources
+
+Recorded as used. Addresses are as recorded in this project; none were
+re-verified this session, and no version claims are made where none is known.
+
+| Resource | What it is for | Where |
+|---|---|---|
+| OpenOrbis PS4Toolchain | compiler, linker, pkg tools, `libSce*` headers, SDL-PS4 port | `$HOME/openorbis`, upstream OpenOrbis/PS4Toolchain |
+| SDL-PS4 (znullptr port) | window, software renderer, audio, input | shipped with the toolchain; source read for the renderer and video-out behavior |
+| ps4libdoc | PS4 library and struct documentation | used as a source of record in `AGENTS.md` §Sources rule |
+| PS4 Developer Wiki | system library and package-format notes | idem |
+| minimp3 | MP3 decoding | vendored in `third_party/` |
+| stb_image | JPEG/PNG/BMP for pictures and the emblem | vendored in `third_party/` |
+| font8x8 | fallback glyphs | vendored in `third_party/` |
+| Inter | the shipped UI font, baked into `src/font_inter.h` | generated by `tools/make-font-atlas.py` |
+| `s1e`/`s2`/`s3` reference renders | visualizer comparison sheets | `files/round3/` |
+| GoldHEN v2.4b18.14 — SiSTRo's Ko-fi shop | the HEN on this console; the only place the 12.5x/13.x/14.x betas are published | ko-fi.com/s/66eac96180 (checked 2026-11-23) |
+| GoldHEN repository, releases and `CHANGELOG.md` | feature list and feature history; **the release page lags the beta line** | github.com/GoldHEN/GoldHEN (checked 2026-11-23) |
+| GoldHEN issue #294 | the Aug 2025 "12.52 needs a new kernel exploit" answer, since superseded | github.com/GoldHEN/GoldHEN/issues/294 |
+| ConsoleMods wiki — PS4:GoldHEN, PS4:Transferring Files with FTP | server settings, ports, the FTP table across loaders | consolemods.org (checked 2026-11-23) |
+| Package-over-FTP guides (itechguides, rottenwifi) | Package Installer sources and the `/data/pkg` flow | secondary sources, checked 2026-11-23 |
+| `libSceGnmDriver` + `libSceGnmDebug*` stubs, `$HOME/openorbis/PS4Toolchain/lib` | linking against the console's GPU driver; listed here because the audit's GPU question depends on them | checked by `ls` 2026-11-23 |
+| Toolchain `include/EGL`, `include/GLES2`, `include/KHR` | a possible GL path; **headers only** — no GLES/EGL/Vulkan stub library was found in `lib/` on 2026-11-23 | checked by `ls` 2026-11-23 |
+| ps4libdoc, PS4 Developer Wiki | GNM and GPU documentation of record | to be read with five phrasings per topic during the audit; every URL recorded with its finding |
+| OpenOrbis toolchain — `CHANGELOG.md` | release history; v0.5.2 (21 Dec 2021) "Added OpenGL/piglet GPU rendering sample + headers"; newest release listed v0.5.3 | github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/blob/master/CHANGELOG.md — checked 2026-11-23, **snippet only** |
+| OpenOrbis `samples/piglet/` | the OpenGL ES 2.0 / EGL 1.4 sample: "Piglet system library", Title ID BREW00071, credited to flatz's `ps4_gl_test` | github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/blob/master/samples/piglet/README.md — checked 2026-11-23, **snippet only** |
+| OpenOrbis `docs/MD/PS4 Libraries/VideoOut.md` | VideoOut constants: `ORBIS_VIDEO_OUT_FLIP_VSYNC 1`, `ORBIS_VIDEO_OUT_PIXEL_FORMAT_A8B8G8R8_SRGB` | github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/blob/master/docs/MD/PS4%20Libraries/VideoOut.md — checked 2026-11-23 |
+| `PS4-OpenGNM/opengnm` | clean-rewrite GNM library, `sceGnm*`/`sceGpa*` compatible; shader compiler `opengnm-psbc` **hardware-validated on FW 9.00**; examples triangle/cube/shader-test/gltf/indirect | github.com/PS4-OpenGNM/opengnm — checked 2026-11-23 (README snippet) |
+| `opengnm-stack` (Vulkan 1.0 layer, SPIR-V → PS4) | **search snippet only, not opened**; an independent audit reportedly finds unsupported/stub paths | address unconfirmed — needs the owner's link |
+| `PS4GL_GNM` (markabrazuk336-maker) | GLES-style driver on GNM with a GLSL → GCN compiler and a PKG maker; stated limit: `glReadPixels` cannot read 16-bit or float targets | address unconfirmed — search snippet only |
+| `ps4-kit` (shitastical) | OpenOrbis with newer clang, runtime with crash log and profiler, Mesa RADV on GNM with a VideoOut presenter | address unconfirmed — search snippet only |
+| `Cpasjuste/pplay` | the reference PS4 video player: mpv + ffmpeg, subtitles, HTTP/FTP streaming, **GPL-3.0**, author states software decoding (4K lags) | github.com/Cpasjuste/pplay — checked 2026-11-23 |
+| `buckethatboy3/pplay-Ps4-Media-Player` | pPlay fork renamed PS4 Media Player: reworked UI, cover art, sorting, search | github.com/buckethatboy3/pplay-Ps4-Media-Player — checked 2026-11-23 (snippet) |
+| projectM | MilkDrop-compatible visualization library: presets as pixel shaders plus per-frame/per-vertex equations | **licence and portability not yet checked** — see §9 and §10 |
+| OpenOrbis `samples/piglet` (local) | the GPU test artifact itself: Makefile, `sce_module/` contents, module loading code | `$HOME/openorbis/PS4Toolchain/samples/piglet` — read 2026-11-23; `TITLE_ID := BREW00093` |
+| flatz, "OpenGL ES implementation on the PS4" write-up (Dec 2018) | the RE basis for Piglet: `scePigletSetConfigurationVSH`, EGL init, config struct recovered from `WebBrowserUIProcess.sprx` | psx-place.com/threads/opengl-es-implementation-on-the-ps4-write-up-provided-by-flatz.21600 and psxhax.com/threads/6156 — **snippet only**, checked 2026-11-23 |
+| `orbisdev/orbisGlPerf` (BigBoss, Dec 2018) | a real log of `sceKernelLoadStartModule(libScePigletv2VSH.sprx) return id: 63` then `libSceShaccVSH.sprx` id 64, then "patching module" | github.com/orbisdev/orbisGlPerf — snippet only, checked 2026-11-23 |
+| `iHaiDeeZ/love-ps4` (LÖVE port) | the **opposite** answer on modules: needs both SPRX from 4.74 devkit firmware, sizes 744,208 and 10,394,272 bytes; looks in `/app0/sce_module`, `/data/love/modules`, `/data/self/system/common/lib`; known error `[rtld] syscall load_prx failed due to 0x0000000d` + "No available video device" = permission denied | github.com/iHaiDeeZ/love-ps4 (README) — snippet only, checked 2026-11-23 |
+| `Mayo1970/Ioquake3-PS4` | the third answer: "Piglet loads automatically from the console's own firmware … the runtime shader compiler (`libSceShaccVSH.sprx`, a devkit-only module) is never needed", hardware-verified with both SPRX absent | github.com/Mayo1970/Ioquake3-PS4 — snippet only, checked 2026-11-23 |
+| `alechurri/shipofharkinian-ps4` docs | a modern port using **Piglet GLES2 + EGL** with SDL2 only for events and timing; also the only source seen naming **OpenOrbis v0.5.4** | github.com/alechurri/shipofharkinian-ps4/blob/main/docs/TECHNICAL.md — snippet only, checked 2026-11-23 |
+| `Rissx223/PS4-IPTV-Player` | "Video is decoded by the PS4's hardware decoder via libSceAvPlayer"; fixed-function decoder for **AVC/HEVC only**, FFmpeg backend only for AV1/VP9/VVC and not real-time | github.com/Rissx223/PS4-IPTV-Player — checked 2026-11-23 (snippet) |
+| `Navinas3460/Stremio-PS4` ARCHITECTURE.md | AvPlayer as the hardware path for MP4/H.264 + `nv12.h` SSE2 conversion: "about 4 ms per 1080p frame on a PS4" — our 5.91 ms is in the same band | github.com/Navinas3460/Stremio-PS4/blob/main/docs/ARCHITECTURE.md — checked 2026-11-23 |
+| `Samuel-Ku/ps4-uk-stream` issue #36 | "mpv in pPlay decodes video in software on the PS4 CPU (Jaguar)"; hardware decode is gated behind `SceAvPlayer` with **no FFmpeg bridge** | github.com/Samuel-Ku/ps4-uk-stream/issues/36 — checked 2026-11-23 |
+| jocover, Dolby TrueHD decoder v1.0.1 (May 2022) | decodes TrueHD to PCM "with the PS4's own hardware decoder"; audio arrives over UDP 7721; PKG `IV0000-BREW03085_00-DOLBYTRUEHDDEC00.pkg` | store.brewology.com/ps4/dolby-truehd-decoder + psxhax.com/threads/12749 — checked 2026-11-23 |
+| `JaimeJimenezG/Moonlight-ps4` PLAN.md | the dissenting view: "hardware decode has no precedent in PS4 homebrew", link stubs for `libSceVideodec2` exist, `wiliwili` documents software-only decode | github.com/JaimeJimenezG/Moonlight-ps4 — checked 2026-11-23 |
+| Console run of `Piglet-GPU-Test-BREW00093-logged-v3.pkg`, 2026-11-23 | **the primary evidence on the module and GL questions** — it supersedes every snippet in this table on those two points, for 12.52 with GoldHEN v2.4b18.14 only | `piglet-gpu-test-v3.log`, 8,343 bytes, pulled over FTP 2026-11-23 |
+| Piglet extension and limit strings | what a render target may be, without creating one: float textures yes, half-float render targets yes, full-float render targets and float blending no, framebuffer fetch no | printed by the v3 package itself; driver strings are the console's, not documentation |
+
+### Who has already solved what (moved)
+
+Verbatim in **`../HISTORY.md`**; the facts are in `PIGLET-NOTES.md`.
+
+## 9. PS4 knowledge base
+
+The facts live in `AGENTS.md` §"OpenOrbis / SDL facts already established", §"Log
+and ladder facts" and §"Console log facts worth remembering", because that file
+is what is read before every change. Short version, so this manifest stands
+alone:
+
+- The SDL-PS4 software renderer **queues** draw commands; `SDL_RenderFlush` runs
+  them. A texture upload forces an early flush, so the look's own work lands in
+  `paint`, not `flush`.
+- `flush` has a hard floor of **21.6–24.5 ms** on every screen, including one
+  that draws nothing: it is the full-frame copy into a 24-bit window surface.
+  No screen can exceed 30 fps until that path changes.
+- Presenting memsets the whole 8.3 MB video-out buffer, copies rows at 4 bytes a
+  pixel, submits a flip and waits for it.
+- A **scaled** full-screen blit costs ~45 ms; an unscaled one is a row copy.
+  Bake small, upscale once, blit 1:1.
+- `sceKernelGetProcessTime()` works before `SDL_Init`; the console libc has no
+  working `CLOCK_MONOTONIC`.
+- The pad opens as a plain joystick; button 0 Cross, 1 Circle, 2 Square,
+  3 Triangle, 13 touchpad click. SHARE is never mapped.
+- A synchronous bake shows in the log as a high `paint` with an unchanged
+  `flush` — that pair is how the 467 ms freeze was identified.
+- **GoldHEN, on this console.** v2.4b18.14 is SiSTRo's beta, published on his
+  Ko-fi shop, **not** on the GitHub releases page: that page still stops at
+  v2.4b18 (28 Oct 2024) and lists firmware only to 11.00, so it is wrong for a
+  12.52 console. The chain of support: **v2.4b18.7** added 12.50 and 12.52
+  ("thanks to 15432 to implement theflow0's NetControl exploit (poopsploit)"),
+  .10 added the PayLoader LaunchPad and AutoRun, .12 added 13.02/13.04/13.50,
+  .14 added 14.02. Three places where sources disagree, all of them traps:
+  1. *Whether 12.52 is supported.* The repo's release page says no; a GitHub
+     issue from Aug 2025 says "first, we need a new kernel exploit"; SiSTRo's own
+     .7 notes say yes from Nov 2025. The .7-and-later betas are right, and the
+     older statements were true when written.
+  2. *The name of the 9090 server.* Official 2.4b18 text says BinLoader, later
+     mirrors say PayLoader. Same port, same job, different label.
+  3. *Which port FTP uses.* GoldHEN's is **2121** in every source; other
+     payload loaders use 1337 or 21, so a client set up from a different guide
+     fails to connect for no visible reason.
+  Services: FTP 2121, payload 9090, klog 3232. Internal package installation
+  from `/data/pkg` has existed since GoldHEN 2.3, and Package Installer's Hdd
+  source is `hdd:/data/pkg/`.
+
+### Graphics principles — the rules every graphics decision follows (2026-11-23)
+
+This is the owner's core instruction, and it governs every graphics change from
+now on. It is checked **before** any graphics decision, and it is kept current
+as rules are added, corrected or retired.
+
+**The loop, in order:**
+
+1. **Research** the technique with five different phrasings. Record sources,
+   dates, and where they disagree.
+2. **State a hypothesis:** what it should look like, and what it should cost on
+   this console.
+3. **Test it** — in a separate package if it touches the GPU, never by folding it
+   into the player untested.
+4. **Measure on the console:** frame time, GPU time, resolution, and what appears
+   on screen. **Host numbers are a ranking, not a console number.**
+5. **Write the result as a rule with its evidence**, in the form "half-float
+   bloom at quarter size costs X ms at 1080p, measured in build N", and mark it
+   **measured**, **researched only** or **assumed**.
+6. **Rank by visual gain per unit of cost** and say why. If a result surprises
+   us, record the surprise. If a rule turns out wrong, correct it, keep the
+   history, and say what changed.
+
+**Rules established so far:**
+
+| # | Rule | Status | Evidence |
+|---|---|---|---|
+| R1 | The Piglet ES2 path works on this console: firmware modules load, EGL 1.4 comes up, `GL_RENDERER: Piglet`, frames present | **measured** | GPU test v3, MD5 `4d556822b249fcf1c3f55a044d806fa2`, log §4/§9 |
+| R2 | Half-float render targets work; 32-bit float render targets do not; no float blending, no framebuffer fetch, no sRGB framebuffers — so feedback is ping-pong targets | **measured** | `piglet-gpu-test-v3.log`, extension scan |
+| R3 | Maximum texture and renderbuffer size 4096, viewport 4096x4096 | **measured** | `piglet-gpu-test-v3.log` |
+| R4 | The sample's 119.9 fps is a textured quad with no shader load, no bloom and no SDL window beside it — it is **not** a budget for a look | **measured, explicitly not transferable** | `piglet-gpu-test-v3.log`, frame timestamps |
+| R5 | The SDL present path costs 21.6–24.5 ms a frame on every screen, including one that draws nothing | **measured** | v112/v116 logs, `AGENTS.md` |
+| R6 | No look fits a 60 Hz frame at step 1, even on the host: 27.8–75.4 ms | **measured (host ranking)**; the console multiplies it by 2.2–4 | `files/round7/README.md` §2 |
+| R7 | What a real 1080p look costs on this GPU | **assumed: nothing.** No number exists | pending BREW00098 (the measurement that will produce it) |
+| R8 | Audio reaction is one global beat list today; per-band beats with a refractory interval and geometric decay, log-spaced bands, packet interpolation and automatic gain are the researched model | global behaviour **measured** in source; the per-band set is **researched only** | `files/round7/README.md` §2, MilkDrop/projectM model |
+| R9 | There is no `libGLESv2.sprx` on this console, so GL work links Piglet by name instead of going through SDL's GL lookup | **measured** | v117 `app.log`, `boot: libGLESv2 rc=0x80020002` |
+| R10 | **Piglet ES2 can only use shaders that already exist as blobs in `libScePrecompiledShaders.sprx`** — OpenOrbis 0.5.2 ships no GLSL compiler, and the runtime compiler is a devkit module this console does not have | **measured** | toolchain `bin/linux` listing; `PigletApplication.cpp:29,36,356` |
+| R11 | **A bloom chain is assemblable from existing blobs**: separable blur pair, brightness/contrast, opacity and texmap composite, on a complete half-float target | **measured** | `gpu-shader-cat.log` 2026-11-24: `82 entries`, `blur1`/`blur2`, `status=0x8CD5 COMPLETE` |
+| R12 | There is **no per-pixel custom shader** on this path — no fluid solve, raymarch, refraction or true bright-pass threshold | **measured** (the table has no such program and none can be compiled) | `gpu-shader-cat.log`, 82 entries; R10 |
+| R13 | **The blur programs are an 11-tap Gaussian with a vec4 radius, and every program in the chain links** | **measured** (console, 2026-11-24) | `gpu-bloom.log`: `link=1 glerr=0x0000` ×5, `u_gaussianKernel[0] size=11`, `u_blurRadius type=0x8B50`, `u_filterAmount type=0x1406` |
+| R14 | **CPU timers around GL draws measure submission, not execution** — a 1080p composite reported at 0.03 ms and a blur at 0.00 ms are queue times, not GPU work | **measured** (console, 2026-11-24) | `gpu-bloom96.log`: `BLOOM … blur1=0.00 comp=0.03 total=8.78ms` with `fps=113.9`; timing must use `EXT_disjoint_timer_query` or `glFinish` |
+| R15 | **`glFinish()` per pass costs ~13–14 ms on Piglet**, independent of the pass size — a 480x270 pass measured 14.6 ms against 18.3 ms for 1080p | **measured** (console, 2026-11-24) | `gpu-bloom97.log`: `bright=14.61` at 480x270 vs `scene=18.30` at 1920x1080; four finishes a frame turned 10.3 ms into 66.7 ms |
+| R16 | **`u_blurRadius` is a `vec2` (`0x8B50`), not a vec4** — set it with `glUniform2f`; a wrong type is rejected with `illegal to set uniform data with different types` and silently leaves the kernel at defaults | **measured** (console, 2026-11-24) | `[PIG]E-glUniform4f:8900` + `CHK pass-blur glerr=0x0502` in `gpu-bloom97.log`; corrects the earlier vec4 note in §4 |
+| R17 | **`GL_RGBA16F` does not exist in ES2, but a half-float render target does** — `internalformat GL_RGBA` + `type GL_HALF_FLOAT_OES` (0x8D61) completes; a port that asks for `GL_RGBA16F` gets a failure and wrongly concludes half-float is unavailable | **measured here + corroborated** | our `gpu-shader-cat.log` `TARGET … 0x8CD5 COMPLETE`; ioQuake3-PS4 reports "no GL_RGBA16F in GLES 2" and forces RGBA8 |
+| R18 | **`eglSwapInterval(1)` after `eglMakeCurrent` blocks `eglSwapBuffers` forever**; set it before the surface is created, or use 0 | **researched only** (two independent ports, not tested here) | shipofharkinian-ps4 TECHNICAL.md; Stremio-PS4 `platform_ps4.cpp` |
+| R19 | **Piglet memory comes from a flexible limit set at `scePigletSetConfigurationVSH`** — a working split is 128 MiB system shared / 512 MiB video shared / 236 MiB flexible / 4 MiB command buffers, textures and render targets out of the flexible share, a 1080p framebuffer pair over 64 MiB | **researched only** | shipofharkinian-ps4 TECHNICAL.md; the numbers to start G1's budget from |
+| R20 | **Frame timing here sits on a ~8.3 ms present floor, so differencing two configs cannot see the work** — `A empty` measured 8.19 ms and `B scene` with a 1080p ramp and 2,000 sprites measured 8.32 ms, a 0.13 ms difference for work that cannot plausibly be free; anything drawn under the floor disappears into the flip | **measured** (console, 2026-11-24) | `gpu-bloom98.log`: `CONFIG empty … ms=8.19` and `CONFIG scene … ms=8.32`. The method is repetition slope: run N passes per frame at N = 1, 4, 16, fit the line, read the slope. Differencing stays valid only for work larger than the floor. The slope is a CPU-side window, so it cannot resolve work below a frame press: [superseded A6] |
+| R21 | **A uniform's set must be probed before it is trusted; the location the driver returns is not always accepted by the driver's own setter** — `u_blurRadius` (reported `0x8B50 FLOAT_VEC2`, loc 49) refuses `glUniform2f` at that location with `illegal to set uniform data with different types`, and `u_gaussianKernel[0]` (loc 51) refuses `glUniform1fv` with `Failed to retrieve uniform info`, each leaving sticky `0x0502` | **measured** (console, 2026-11-24) | `gpu-bloom99.log`: the `UNI`/`SET` block, then `CONFIG n1/n4/n16 … state=VOID err=0x0502`. Rule: try each set once at link, drain the error, print the result, and skip a uniform that refuses (A4). A skipped uniform leaves the driver's defaults, so the picture is not the intended one but the pass cost is unchanged |
+| R22 | **One log, in `/data/Alpha PS4 test kit/`, and delete what earlier builds left** — old builds opened seven sinks at once, so every run scattered copies that had to be deleted by hand | **decided** (owner, 2026-11-24) | One path via `sceKernelMkdir` + retry, then `sceKernelUnlink` over an **exact-name** table (no patterns), logging `CLEAN removed=N refused=M`. The player's `app.log`, `app.old.log`, `config.ini` and `shots/` are never in it |
+| R23 | **No package is handed over until `tools/check-pkg.py` passes it** — BREW00102 installed as Corrupted Data (`CE-33481-9`) then refused to start (`CE-34544-0`): its `param.sfo` had 7 entries of 11, because a killed build left it half-written and `make` kept it | **decided** (owner, 2026-11-24) | `all` depends on `check`: SFO parses, 11 entries, required keys, CONTENT_ID/TITLE_ID match the Makefile, 36-char id, `CNT` magic, not truncated. `make clean` after any interrupted build |
+| R24 | **GPU cost comes from the GPU clock; a CPU window is only an upper bound** — draws + `glFinish` with no swap in the window still gave 16.656 ms at N = 0, 16.659 at N = 16, 33.340 at N = 64 | **measured** on this console, 2026-11-24 (A6) | `gpu-bloom102.log` BREW00102 `CONFIG empty draw_ms=16.656`, `n16 16.659`, `n64 33.340`. Wrap the frame in `GL_TIME_ELAPSED_EXT` via `EXT_disjoint_timer_query` and fit the slope on `gpu_ms`; report a CPU window as "< one frame" and name the instrument behind every number |
+| R25 | **Read what other PS4 homebrew and the ES2 spec already solved before a round** — two console runs (A4, A5) went into a uniform question the spec answers in one line | **decided** (owner, 2026-11-24) | Order: ES2/EGL spec → this project's §9 facts → `shipofharkinian-ps4`, `Stremio-PS4`, `shadPS4` → a console run. Findings in `PIGLET-NOTES.md`; borrowed ideas get a clean-room note (§8) |
+| R26 | **Reflect on this manifest before every step, and verify that step against it** — the owner had to point out that BREW00102's timing question was already published (`shipofharkinian-ps4`) and the uniform question was answered by the ES2 spec, after both had been sent to the console as tests; work that repeats a recorded answer is waste, and it is the owner's time being spent | **decided** (owner, 2026-11-24) | Before any build, console run, research task or report step: reread §2, §6, §8, §9, `PIGLET-NOTES.md` and the amendments, and state in one line **which recorded fact the step tests** and **what is genuinely new**. If the answer is already recorded, do not spend the run - cite it instead. If a step duplicates one already in the plan, drop it. Applies to every build and every future project (G10 inherits it); a round that skips this reflection is a defect in the round, whatever the build |
+| R27 | **The hardware is known: never spend a run on what §7, §9, `PIGLET-NOTES.md` or the measurement rules already settle** — BREW00103 was queued to ask "why 16.66 ms" when the measurement rules have said since v112 that every frame waits on the display and lands on whole 16.7 ms multiples; the owner had to say so | **decided** (owner, 2026-11-24, A7); the 16.66 ms step itself is measured - `AGENTS.md` measurement rules and `gpu-bloom102.log` BREW00102 | Every console request names the one unknown it closes and quotes the recorded fact it does *not* contradict. A run to confirm the display contract, the module load, the memory class, the packaging route, the log path or uniform binding is refused, and the recorded line is cited instead. Hardware questions go to §7 "settled" list first; only behaviour absent from it can be tested |
+| R28 | **The target is the PS4 family, not this one console** — the work is PS4 software, and PS4 is the common denominator: same OS, same GLES2/Piglet, same audio, video, pad and package interfaces on every model, so working PS4 software runs on all PS4s | **owner-stated 2026-11-24** (not yet measured on a second model) | One package, no model branches. Every number names the model; a Pro result is an upper bound and the base PS4 is the budget floor. Firmware and GoldHEN are per-console setup, not features of the software |
+| R29 | **Do not reproduce a method that already exists - reuse it** — this project has rebuilt things that were already there: a bespoke logger and an on-screen text renderer for every probe while the player already had `applog` and its own text drawing, and a uniform-binding answer the ES2 spec states | **decided** (owner, 2026-11-24) | Before writing anything, look in this order: this repository's own proven code (`src/applog.c`, the UI text renderer, the ladder), the OpenOrbis samples, a licence-clean library, then the published technique - and use it instead of re-deriving it. Write new code only where nothing fits or the licence forbids it, from the documented method and never pasted (G7 clean-room note). Two implementations of one job must name why the second exists, or the second one goes |
+| R30 | **Ask the owner only about how it should look; every technical question is answered here and work continues** — the owner's instruction, 2026-11-24: "the only thing that should be asked is aesthetic questions... if it has to do with programming or coding in any way... refer to the Manifest to find the solution instead of asking the user" | **decided** (owner, 2026-11-24) | A question to the owner is allowed only when the answer is a **visual choice** - which look, which palette, sharper or smoother, this layout or that. Anything technical (an API, a driver refusal, a format, a build error, a timing method, a structure, a default value) is resolved from this manifest, `AGENTS.md`, `PIGLET-NOTES.md`, `APPENDIX-LOGS.md`, `ROUND-NOTES.md`, the ES2/EGL spec, the OpenOrbis samples, then other PS4 homebrew - and the answer is written back into the manifest in the same turn, so the next session finds it. If a technical answer genuinely is not in any of those, the fallback is a decision recorded with its reason, not a question. Asking the owner to choose a technical option is a defect in the round. A **console run is not a question**: it is a step that needs their hands, and the reply gives it with the file, MD5, install route, what to do and which lines to send back |
+| R31 | **Two threads write the playback flags with no lock** - `s_playing`, `s_quit` and `s_track_finished` are declared `volatile int` in `src/main.c:157-159`; the SDL loop sets them, and `audio_thread` also writes them at the end of a track (`s_playing = 0; s_track_finished = 1;`, `src/main.c:1883-1885`), while `src/main.c` holds no `pthread_mutex` anywhere, so `volatile` is being asked to do a synchronization primitive's job | **found in source** (read 2026-11-24), not fixed | `volatile` orders nothing in C11: it does not make a read-modify-write atomic, and it does not stop the compiler from moving the flag across the buffer it guards, so a stale or reordered read can start a track the loop has already stopped, or leave the thread playing one the loop believes is over. Fix it in its own round, with one owner per flag: the loop asks for the change and the audio thread performs it under a `pthread_mutex_t`, or the thread is handed a generation number when a track starts and stops when the generation moves. The pattern is already in this codebase - `src/applog.c` holds `s_mtx` across every write. `make check` cannot see this race (the host tests pass either way), so the fix is proven by a console run that stalls and repeats a track, read from the audio summary in the log |
+| R32 | **Owner-authorised rounds are the only way source is written** | **owner-stated 2026-11-24** | The relay forbids editing project files, so a named round is the only route into `src/`; two agents stalled for hours on that wording. The owner names the round and its file list, only those files may be written, the round appends its file list, its before/after numbers and how to revert, and dated backups stay inside `PS4Dev/` under `_scratch/backups/` with their hashes in the relay. A round with no file list is not authorised. |
+| R33 | **One namespace: a rule is in the table and in the index, or it does not exist** | **measured 2026-11-24 (read from the tree)** | R32 was adopted, recorded in the build log, and still absent from the rule table and `../RULES.index` - so the rule that governs every source edit was invisible to the file a session reads. Every rule has one id in exactly two places: its row here or its G entry in `AGENTS.md`, and its record in `../RULES.index`. A rule named only in a log, a chat or another file is a note, not a rule. |
+| R34 | **A rule without a falsifier is a preference** | **measured 2026-11-24 (44 of the 48 rules carried no falsifier when this rule was added; counted in `MANIFEST.md` and `RULES.index`)** | The table mixes measured facts, procedure and taste, so a reader cannot tell which rows could be wrong. Every rule states a status from one closed set - measured, researched only, owner-stated, assumed, procedural, contested - and anything measured also states what observation would prove it wrong. Rows that are neither owner-stated nor measured say so in the row itself. |
+| R35 | **Every pointer resolves, and a skipped check is never a pass** | **measured 2026-11-24 (read from the tree)** | The read order began at `files/STATUS.html`, which does not exist - the file is `../STATUS.html` - and the checker's MD5 test skips itself when the package archive is absent while still counting as passed. Paths quoted here and in `AGENTS.md` resolve against the layout `README-KIT.txt` declares, and the checker verifies every backticked path that looks like a file. A check that cannot run reports `skipped`, never `ok`. |
+| R36 | **Every measured rule names the machine it was measured on** | **owner-stated 2026-11-24** | The console is a PS4 Pro on 12.52 with GoldHEN v2.4b18.14, and today that lives only in prose. A measured rule carries the firmware and loader version beside the number, so a reader on another version re-verifies instead of inheriting a figure that may not apply. Unmeasured rules say `unmeasured` rather than borrowing a number from a neighbouring row. |
+| R37 | **Each agent verifies independently, and no agent's report is evidence for the other** | **owner-stated 2026-11-24** | Two agents share one laptop and one tree. A claim confirmed by its own author is not a verification, so each side checks the tree directly - hash, mtime, rule count, the checker's own output - and records its own result with the hash it saw. A peer's summary is a lead to check, not a fact. Disagreement is settled by a hash, never by repetition or seniority; where two readings persist, both are recorded and the test that separates them is named. |
+| R38 | **A pointer resolves in one of three declared namespaces** | **measured 2026-11-24 (read from the tree and the publisher)** | A backticked path resolves in the working tree, in the publish output (`tools/publish-docs.py` generates `docs/README.md` and `CHECKSUMS.txt`), or on the console under `/data/`. It is dead only when it resolves in none of the three. R35 runs in the first two and names the namespace it resolved in, so a generated page is not a broken pointer and a green markdown link check is not coverage of a backticked span. |
+
+**Ruled out by the driver, not by preference — do not propose these without a
+new reason:** 32-bit float render targets (`EXT_color_buffer_float` absent),
+float blending (`EXT_float_blend` absent), framebuffer-fetch feedback (both
+names absent), sRGB framebuffers (`EXT_sRGB` absent), and the software canvas
+as *the* answer to the graphics standard (R5, R6).
+
+**One thing the principles forbid saying:** that the GPU is faster. Nothing
+has been drawn through it yet except a quad, so R7 stands empty until Round 2.
+
+### Carried from other PS4 homebrew (moved)
+
+Verbatim in **`../HISTORY.md`**; the facts are in `PIGLET-NOTES.md`.
+
+### GPU: verified here, and what is still unknown (2026-11-23)
+
+Checked by reading this project's source and listing the toolchain, not by
+research, so it is stated as verified:
+
+- There are **eighteen** visualizer styles (`src/spectrum.c`,
+  `vis_style_name()`), all drawn by `src/vis_art.c` into an SDL software
+  surface. **No GPU code exists in `src/`** — no shader, no `gnm_` call, no GL.
+- The app **already loads the GPU driver**: `src/main.c` calls
+  `sceKernelLoadStartModule` on `/<sandbox>/common/lib/libSceGnmDriver.sprx`
+  with `/system/common/lib/libSceGnmDriver.sprx` as fallback, logs the result,
+  and calls `sceGnmSubmitDone()` when the system UI is over it. So GNM is
+  reachable on this console and a driver session already exists; what does not
+  exist is any drawing through it.
+- The toolchain ships `libSceGnmDriver.so` and the `libSceGnmDebug*` stubs, so a
+  GNM path is linkable today. It also ships `EGL/`, `GLES2/` and `KHR/` headers
+  but **no** GLES/EGL/Vulkan stub library was found in `lib/`, which makes GNM
+  the likely route and GL the unlikely one.
+- The present path is the frame's hard floor: a full-frame copy into a 24-bit
+  window surface, 21.6–24.5 ms on every screen. Any GPU renderer still has to
+  hand its result to the same video-out flip, so that floor is part of the
+  audit's arithmetic.
+
+Unknown until the audit answers it, and to be researched with five phrasings
+per topic before anything is decided: what GNM exposes for compute and shader
+stages on 12.52; whether a GNM renderer can coexist with SDL's window surface
+and its flip; whether text and chrome can stay on SDL while visuals move; what
+bloom, particles and lighting cost on this GPU at 1080p; and what the port costs
+in weeks. **No source disagreements recorded yet** — none has been researched;
+the audit fills this in and flags the disagreements where it finds them.
+
+### Video decode, verified and disputed (2026-11-23)
+
+**Verified in our own source:** there is no FFmpeg and no CPU decoder in this
+player. Video is `libSceAvPlayer` (Sony's system player), our per-frame work is
+`convert_nv12()` at 5.91 ms average / 26.60 ms worst, and the drain loop
+(`src/video_orbis.c` ~1430–1485) pulls at most 8 frames per step, breaks on the
+first empty return, and increments `pull_fail` there — so that number counts
+empty polls, not lost frames. `pull_rounds` is counted but never printed.
+
+**What four other projects say, and where they disagree:**
+
+- PS4-IPTV-Player: "video is decoded by the PS4's hardware decoder via
+  `libSceAvPlayer`", and the decoder is fixed-function for **AVC/HEVC only**.
+- Stremio-PS4: uses AvPlayer for MP4/H.264 and converts NV12 with SSE2 at about
+  **4 ms per 1080p frame** — our 5.91 ms is the same order, so conversion is not
+  the bottleneck either.
+- ps4-uk-stream: **pPlay's mpv decodes in software** on the Jaguar CPU; the
+  hardware decoder is only reachable through `SceAvPlayer`, with no FFmpeg
+  bridge.
+- Moonlight-ps4's plan: **"hardware decode has no precedent in PS4 homebrew"**,
+  pointing at `libSceVideodec2` stubs and at wiliwili's software-only decode.
+
+The last one is the disagreement: whether AvPlayer counts as "hardware decode"
+or whether that name belongs only to direct `libSceVideodec2` access. For our
+purposes it does not change the measurement — **our frames arrive from AvPlayer
+and our budget goes to the present path** — but it does mean the claim "another
+player does 8-bit H.264/HEVC in hardware" is about AvPlayer's internal decoder
+and remains unverified here. jocover's TrueHD PKG proves the console's codec
+blocks are reachable from a homebrew PKG through system libraries, not that our
+path can bypass AvPlayer.
+
+### Visualizer audit headline (2026-11-23)
+
+Eighteen looks, host, 1640×560, 40 frames: step 1 runs **27.8–75.4 ms**, step 3
+**11.2–17.8 ms**. Nothing fits a 60 Hz frame at full resolution even on the host,
+so the console's 15–20 fps at step 2/3 is arithmetic, not a bug. No look contains
+a shader, a bright-pass bloom, or a lighting model; "glow" everywhere is a soft
+radial blit. Audio reacts through one global beat list (median interval, 60–160
+BPM fold) with no per-band running average, no ~150 ms refractory, no geometric
+decay, no packet interpolation and no automatic gain. Full table, effects
+inventory and the two-target plan: `files/round7/README.md`.
+
+### Amendments — A1 and A2 (text lives in `AGENTS.md`)
+
+**A7 — asking the console for a step the rules already fix.** *Before:* A6 treated
+"why 16.66 ms with no present" as an open question and BREW00103 was built to
+answer it. *After:* the measurement rules in `AGENTS.md` have said since v112 that
+**every frame waits on the display, so frame times come out as whole multiples of
+16.7 ms**; 16.656 / 16.659 / 33.340 are one, one and two refreshes, which is that
+rule obeying itself, and no run was needed to learn it. What A6 legitimately adds
+is only the *cost of the chain*, which the display cannot show and the GPU clock
+can. *Evidence:* `AGENTS.md` measurement rules; `gpu-bloom102.log` BREW00102.
+*Status:* recorded fact, restated; rule R27. **Owner-stated 2026-11-24:** "I am
+sure you're missing a lot if you're having me do any testing on known hardware."
+
+**A6 — a CPU-side timed window cannot measure GPU work below one frame.**
+*Before:* A3/R20 said cost comes from a repetition slope, and BREW00100-102
+closed the window at `glFinish` before the swap to get under the present floor.
+*After:* with **no swap inside the window at all**, BREW00102 still measured
+`draw_ms=16.656` at N = 0, `16.659` at N = 16 and `33.340` at N = 64, so the
+driver quantises any CPU-side finish to one refresh: the window can only say
+"less than a frame", and the slope it produced (0.278 ms/pass, r2 0.9509) is one
+point crossing a vblank, not a measurement of the chain. The repetition slope
+stays the method; the instrument becomes the GPU's own clock -
+`EXT_disjoint_timer_query` is published here (section 9), so a frame is wrapped
+in `GL_TIME_ELAPSED_EXT` and `gpu_ms` is read back. *Evidence:*
+`gpu-bloom102.log` 2026-11-24, five `CONFIG` lines and
+`RESULT slope ms_per_pass=0.278 intercept_ms=14.913 r2=0.9509`. *Status:*
+measured on this console; rule R24; BREW00103 implements it. Its reading
+of the 16.66 ms as an open question is [superseded A7].
+
+
+The register of rules changed by later evidence is kept in `AGENTS.md` with the rules
+it amends. **A1**: per-pass `glFinish` as a timing method. **A2**: `u_blurRadius`
+typed as a vec4. Each carries its before wording, after wording and evidence.
+
+### GPU rendering paths that exist for PS4 homebrew (index, 2026-11-23)
+
+**Every line here came from search snippets unless it says otherwise, and none
+has been run on this console.** Treat the whole index as leads to verify, in the
+order §5 sets.
+
+1. **Piglet / GLES2 via OpenOrbis — the only path already on this machine.**
+   v0.5.2 (21 Dec 2021) added "OpenGL/piglet GPU rendering sample + headers"; the
+   sample describes Piglet as "an OpenGL ES 2.0 and EGL 1.4 specs
+   implementation" (Title ID BREW00071, derived from flatz's `ps4_gl_test`), and
+   this project's toolchain include root already carries `EGL/`, `GLES2/`,
+   `KHR/` — though **no GLES/EGL stub library was found in `lib/`** when checked
+   here, which is the first thing to resolve.
+   *Disagreement:* older write-ups say a GL app must load the system modules
+   `libScePigletv2VSH.sprx` and `libSceShaccVSH.sprx`; one developer reports an
+   SDL port needing no external modules. Whether that holds on 12.52 is
+   **unknown** — the sample is the test.
+2. **OpenGNM (`PS4-OpenGNM/opengnm`)** — GNM library with `sceGnm*` drop-in
+   compatibility, a SPIR-V shader compiler (`opengnm-psbc`) reported
+   hardware-validated on **FW 9.00**, and a set of small examples. Same family:
+   `opengnm-stack`, a Vulkan 1.0 layer; an independent audit reportedly finds
+   unsupported or stub paths in it. **Experimental** — record that word next to
+   every result.
+3. **PS4GL_GNM** — GLES-style driver on GNM with its own GLSL → GCN compiler and
+   a PKG maker; stated limitation: `glReadPixels` cannot read 16-bit or float
+   render targets (relevant if a frame is ever read back for capture).
+4. **ps4-kit (`shitastical`)** — OpenOrbis with a newer clang, a runtime with
+   crash logs and a profiler, and Mesa RADV on GNM with a VideoOut presenter.
+   Attractive because it would give a real Vulkan/GL stack and a debugger, and
+   because **this project has no profiler**; expensive because it is a whole
+   build environment.
+
+Decision rule already in §5: smallest working sample first, every result —
+including "does not build" and "crashes on launch" — logged in §6.
+
+### The module question — ANSWERED 2026-11-23 (the four positions, then the log)
+
+This is the disagreement the GPU test exists to settle. **All four are search
+snippets or local reads; none has been run on this console.**
+
+1. **Our own sample (read locally, verified with our eyes).**
+   `PigletApplication::loadModules()` builds `/<sandbox>/common/lib/`, then
+   `sceKernelLoadStartModule` on `libScePigletv2VSH.sprx` and on
+   `libScePrecompiledShaders.sprx` — **not** `libSceShaccVSH.sprx` — and prints
+   `Piglet module_start() = <rc>` / `PrecompiledShaders module_start() = <rc>` or
+   `Failed to load the Piglet module, err=0x…`. Its PKG's `sce_module/` holds
+   only `libSceFios2.prx` and `libc.prx`. So: **the system copies are expected,
+   and the sample brings none.**
+2. **orbisdev/orbisGlPerf (2018 log).** Both SPRX load from the sandbox path as
+   ids 63 and 64, then the module base is patched ("patching module") — implying
+   the system copy needed a runtime patch on that firmware.
+3. **LÖVE PS4 port.** Demands both SPRX from **4.74 devkit** firmware, either in
+   the PKG or at `/data/love/modules` or `/data/self/system/common/lib`, with
+   exact sizes 744,208 and 10,394,272 bytes; "Without the modules, graphics fail
+   to start". Its diagnostic signature is worth memorizing:
+   `[rtld] syscall load_prx failed due to 0x0000000d` followed by "No available
+   video device" — that is a **permission refusal**, not a missing file.
+4. **ioQuake3-PS4.** The opposite: Piglet loads automatically from the console's
+   own firmware and the devkit `libSceShaccVSH.sprx` is never needed;
+   hardware-verified with both absent.
+
+**The answer, from the console, 2026-11-23:** **system modules only, no devkit
+files, no patch step.** In the v3 log the prefix is the title's own sandbox
+mount — `module prefix: /BgZIO2hcQg/common/lib/` — and both modules load from
+the firmware:
+
+```
+[    0.075] Piglet module_start() = 0 (0x00000000), handle 21
+[    0.078] PrecompiledShaders module_start() = 0 (0x00000000), handle 22
+[    0.079] STAGE 2  module load: both modules started
+```
+
+`libSceShaccVSH.sprx` (the LÖVE port's devkit file) was never requested and the
+GL context came up without it, so on this console the devkit position is wrong
+for this sample. There is no "patching module" line either — the 2018
+orbisGlPerf behaviour was not needed here. **This applies to this sample, on
+this console, on 12.52 with GoldHEN v2.4b18.14** — nothing more, and the other
+stacks in §9's index remain unverified. What to read in the
+log, in order: `Module prefix = …` (is the sandbox path the real one),
+`Piglet module_start() = …` or `Failed to load the Piglet module, err=0x…`,
+`PrecompiledShaders module_start() = …`, `Modules loaded OK`,
+`EGL version major=… minor=…`, `Piglet num_configs = …`, then
+`GL_VERSION` / `GL_VENDOR` / `GL_RENDERER` — the last three are the GPU answer
+in the driver's own words. A `load_prx … 0x0000000d` before "No available video
+device" means refused, not missing. Note also: LÖVE names `libSceShaccVSH` while
+our sample names `libScePrecompiledShaders`; do not treat them as the same file
+without evidence.
+
+### Console GPU facts (as recorded, not measured here)
+
+- **Base PS4:** 18 compute units, 1,152 shader cores, 1.84 TFLOPS, GCN, shared
+  system memory with no separate VRAM.
+- **PS4 Pro:** 36 compute units, ~4.2 TFLOPS, Polaris-based, dual-rate 16-bit
+  (two FP16 operations per cycle).
+- Ours is a **Pro**. **Whether homebrew here runs in Pro or base mode is
+  unknown** and is now an open question (§10) — it decides whether the visual
+  budget is the 18-CU or the 36-CU one, so nothing may be assumed about it.
+  The log does not print it; the check would be a GPU query (a GNM/submission
+  path) or a measurement, not a guess.
+- Shared memory means no VRAM ceiling to plan against, but the same 4.6 GB pool
+  the audio, video and library already live in.
+
+### Visualizer techniques worth adopting (2026-11-23)
+
+- **MilkDrop-style warp feedback** — the projectM model: each frame is warped
+  and blended with its own previous frame through a pixel shader, modulated by
+  the music. It is the single technique that most separates "modern real-time"
+  from "shapes on a canvas", and it is inherently GPU work. Licences not yet
+  checked (projectM is the reference; its preset corpus has its own terms).
+  Candidate only, per §5.
+- **Log-spaced spectrum bands** so bass gets resolution where the ear has it —
+  our current bands are not log-spaced (audit item).
+- **Per-band beat detection:** each band compared against its own running
+  average, a threshold, a **refractory interval of about 150 ms**, and a
+  **geometric decay** so a beat is a value that fades rather than a binary that
+  flickers. Current code: global beat + BPM fold, no per-band refractory, no
+  decay.
+- **Interpolate between audio analysis packets** so visuals do not step at the
+  packet rate (43 ms blocks with the current 2048-frame buffer).
+- **Automatic gain** so quiet tracks still move — we have `level` in the log but
+  no AGC pass.
+
+Each of these is an audit line against every look, not a wish list.
+
+### Existing PS4 media players to study (licences noted where known)
+
+| Project | What to take from it | Licence / caveat |
+|---|---|---|
+| **pPlay** (mpv + ffmpeg) | many codecs, subtitles, HTTP/FTP streaming, custom mpv config, **non-Latin text via a bundled font file** — directly relevant to our `??????` bug | GPL-3.0; author states software decoding, so 4K lags |
+| **PS4 Media Player** (pPlay fork) | reworked UI, cover art fetching, movie/show sorting, search tab | fork of a GPL-3.0 project |
+| **Media Center for PS4** | favorites, last played, playlists per media type, safe USB-removal handling | not checked |
+| **PS4 Player / PS4 Player 3D** | MP4/MOV, ASS/SSA subtitles, 3D and 180/360 from filename tags | not checked |
+| **PS4 IPTV** | M3U and Xtream sources, continue watching, multiple audio/subtitle tracks, playback geometry | not checked |
+| **jocover Dolby TrueHD decoder PKG** | how a homebrew PKG reaches the console's own decoder | **search snippet only, not opened** |
+| **PS-PLAY 3.0** | claims optional hardware decode of 8-bit H.264/HEVC via the console's decoder | **target platform unconfirmed — do not rely on it** |
+
+### Research still to be done (five phrasings each, disagreements recorded)
+
+1. Official sample code for `libSceAudioOut` and `libSceVideoOut` in OpenOrbis, and
+   what low-latency audio looks like for a visualizer (current block is 43 ms).
+2. Network streaming for PS4 homebrew — the owner's list broke off here; the
+   rest of the item is to be supplied before it is treated as complete.
+3. What the PS4 GPU can do per visualizer topic: bloom, particles, lighting,
+   compute, and at what cost at 1080p.
+4. Whether a GNM/GL renderer can share the screen with SDL's window surface and
+   its flip, or has to own presentation itself.
+5. Text and chrome on SDL while visuals move to the GPU: possible, and what it
+   costs in a composited frame.
+
+### Logging notes (moved)
+
+The three stranger logs that were read and ruled out, and the survey of where
+`/data` accepts writes on 12.52, are in **`APPENDIX-LOGS.md`** - evidence behind
+R22, not rules (G9).
+
+## 10. Open questions
+
+**Answered 2026-11-23 — the first GPU log was empty because the redirect failed,
+not the disk.** v3's first line, written before any module loads, arrived from
+`/data/piglet-gpu-test-v3.log`, and two more sinks opened beside it (§9). The
+filesystem was writable all along; what produced nothing in v1 was
+`freopen`/stdio on stdout. Kept open only in the narrow form: whether that is
+`freopen` itself or the stdio buffer, and whether it would ever have flushed.
+No further test is planned — the kernel-call writer works and is the pattern to
+reuse.
+
+1. ~~Is the freeze actually gone on hardware?~~ **Answered 2026-11-23**: yes.
+   42 presses, no frame over 50.1 ms, worst paint 18.5 ms.
+1a. Is 15 fps right for Liquid on this console? The ladder stops at step 2 because
+   its budget is 88 ms; step 3 would give 20 fps on a third of the canvas. Plan:
+   the owner tries `[quality] budget_ms = 62` once, and says which they prefer —
+   smoothness or sharpness. Nothing to decide from here.
+2. Do the darker patches under the water's dips on the television belong to the
+   rendering or to the camera? Plan: still open — v116 did not touch the body's
+   vertical shading, and a capture of the same moment would settle it.
+3. Do the v116 glint and the crest-clustered spray read on a television? Plan:
+   the next capture. The glint is now measured at +66 luma over 567 pixels on
+   the host, which is the most it can be argued from here.
+4. The NEON outlier (116.8 ms for a stretch in one session, 70.1 ms in another)
+   is still unexplained. Plan: one focused re-test with the log running.
+5. Whether the 12.52 "Testkit" support GoldHEN v2.4b18.7 mentions changes
+   anything for a retail console. Plan: none needed unless something breaks;
+   noted so it is not rediscovered as a surprise.
+6. Which looks can be GPU-rendered without rebuilding the chrome? Plan: the
+   audit settles it, starting from the fact that a GNM driver session already
+   exists while the window and its flip belong to SDL.
+7. Why video plays at 16 fps with 15,397 pull failures. Plan: a run at
+   `log level=2` on the same file, then read the video notes before changing
+   anything.
+8. What the right frame rate for Liquid is under §1 — 15 fps at step 2 is not
+   defensible, 20 fps at a third of the canvas is a trade-off, and full
+   resolution at 30 fps may need the GPU. Plan: the audit prices all three.
+9. **Does homebrew on this Pro run in Pro mode or base mode?** 36 CUs at ~4.2
+   TFLOPS or 18 at 1.84 changes every budget. Plan: measure or query, do not
+   assume; log the method with the answer.
+10. ~~Do GLES2/Piglet apps need `libScePigletv2VSH.sprx` and `libSceShaccVSH.sprx`
+    on 12.52?~~ **Answered 2026-11-23**: `libScePigletv2VSH.sprx` and
+    `libScePrecompiledShaders.sprx` load from the firmware with
+    `module_start() = 0`; `libSceShaccVSH.sprx` was never requested and is not
+    needed by this sample (§9).
+11. What licence does projectM's preset corpus carry, and can a warp-feedback
+    effect be written cleanly from scratch instead? Plan: check before any code;
+    from-scratch is the default.
+12. ~~Do the system Piglet modules exist and load on 12.52 retail?~~ **Answered
+    2026-11-23**: yes — handles 21 and 22, both `module_start() = 0`, on 12.52
+    with GoldHEN v2.4b18.14.
+12a. **What does a visualizer actually cost on the GPU?** Nothing is drawn
+    through Piglet yet, so there is no number. Plan: the proof of concept — one
+    look, half-float render targets, a bloom pass, at 1080p — measured in
+    milliseconds and could-be-vsyncs, then decided. No port before that number
+    exists.
+12b. **Can SDL's window and flip survive a second presenter?** Piglet renders
+    to its own surface and swaps it; the player's window belongs to SDL. Whether
+    the two can interleave, or the GPU look has to present the whole frame, is
+    the first thing the proof of concept has to settle.
+13. Is OpenOrbis **0.5.4** real, and does it change the piglet headers or stubs?
+    `shipofharkinian-ps4` mentions v0.5.4; our release zip is 0.5.2. Plan: check
+    the releases page before any port work, so the test is not run on the oldest
+    GL headers in the line.
+
+
+## 11. Next steps
+
+**Standing reply rule (added 2026-11-23, owner's instruction):** every reply ends
+with the **Logical next step** — the single decision or action that comes next,
+plus the exact information needed to make it: the file, package, version or
+number involved, what each branch leads to, and what to look at or send back. It
+is a proposal, not a question, and it never leaves the owner to reconstruct
+context. When nothing is left to decide, the reply says so and names the step
+after that. This replaces the older "end on a question" and "never end on a
+question" habits: the ending is now always a decision the owner can actually
+make.
+
+**The Logical next step must also carry its instructions (added 2026-11-23,
+owner's instruction).** Naming the step is not enough: the same paragraph states
+how to execute it, in order, as far as it can be written down — the exact file
+and MD5 to FTP, the package source to install from, how long to run it, the exact
+log path to pull and in which mode, and the specific lines to send back. For a
+build step that means the command, the package name, the MD5 and the source hash.
+The test is simple: the owner should be able to act on the last paragraph without
+asking a follow-up question, and should know exactly what to look for. If the step
+is the owner's and it needs something they have not given yet, the three
+unreported observations in §2 are the model for how to ask for it.
+
+**Owner-supplied information is folded in automatically (added 2026-11-23,
+owner's instruction).** When the owner states something that bears on the build or
+on how this console, this toolchain or this kind of software behaves, it goes into
+the right section without a separate request — a fact into §9, a console behaviour
+into §7, a rejection into §5, a failure into §6, a number into the Graphics
+principles table with its status attached. The filter is usefulness to the work,
+not length or politeness: it must help this build, or the understanding of the
+system this build sits on, or a future project that inherits these notes. Recorded
+as stated, with the date and who said it; contradictions get both readings and a
+note to test rather than a silent overwrite. **Do not** record passing preferences,
+anything already covered, or a remark whose only use is conversational — a
+manifest that fills with noise stops being read, which is worse than one with a gap.
+When it is unclear whether a statement is durable, record it with its status
+(`owner-stated, untested`) instead of leaving it out. This is how the file stays
+worth reading after this project ends: the goal is a knowledge base future apps
+can be built from, not a diary of the build.
+
+**Asking is allowed when it is the instruction (added 2026-11-23).** The owner may
+ask to be consulted, and then a reply ends with the question instead of a
+proposal: state the options, what each one costs and what each one unlocks, and
+wait. "Do not end on a question" applies to unprompted endings, never to a
+request for a decision.
+
+**Continuous progress rule (added 2026-11-23, owner's instruction):** keep moving
+to the next logical step without waiting for a new approval, as long as that step
+is inside the plan already agreed. Do **not** stop between rounds to ask "shall I
+start?" — a round that is already written down is already authorized, and its
+build, its tests, its package, its log entry and its backup are part of finishing
+it. Stop and ask what the next move is only when new information is genuinely
+needed from the owner: a console observation, a run or a pulled log, a choice
+between measured options, a decision the plan explicitly reserves to the owner, or
+a permission the hard rules gate (deleting or moving files, publishing, pushing,
+changing something the request did not name, porting a visualizer before the
+proof of concept is approved). When stopping, name exactly what is needed, why the
+work cannot continue without it, and what each answer would unlock — and every
+other rule still applies while doing it: one change at a time, measure before
+claiming, verified/assumed/unknown, build log with MD5 and source hash, rollback,
+milestone backup.
+
+**Look for the existing solution before asking.** When a problem turns up that
+other people have already met — a build error, a missing symbol, a driver
+refusal, a libc oddity, a console behaviour, a package that will not install —
+find out how they solved it before asking the owner for anything. Search several
+phrasings as the research rule says, read the toolchain's own samples, headers
+and sample code first, then ps4libdoc, the PS4 Developer Wiki and open-source
+homebrew that uses the same library, and record the fix with its source the way
+every other researched fact is recorded. This is also how the queue of known
+PS4 problems is meant to be used: `files/bootstrap-toolchain.sh`, the toolchain
+samples and the earlier rounds' logs already contain the answers to build and
+environment questions, and re-deriving them wastes the owner's time. The owner
+is asked only when the answer needs something no source can supply — a fact only
+this console, this account or this owner has, a run or a pulled log, or a choice
+between measured options the sources cannot decide. A failed build is not a
+question: an error another project already worked around is a lead to follow, not
+a wall to report.
+
+**New evidence amends the rule, and the amendment is recorded (added
+2026-11-24).** When a measurement, log line or source contradicts an existing
+rule, the rule itself is edited in place — not merely contradicted somewhere
+else — in the same turn, before anything is built on the old version. Each
+amendment carries the date, what the rule said before, what it says now, and the
+evidence that forced it; the previous wording moves to a one-line "superseded"
+note (§6 or the build log) so nothing is lost and nothing is silently rewritten.
+**An amendment may make a rule stricter on its own; it may never weaken a rule
+that protects the owner's files, data, legality or build stability without the
+owner agreeing first.** If the evidence suggests a change but does not prove it,
+both readings stay, marked `contested`, with the test that would settle them.
+Amendments themselves are listed in §9 to keep them auditable.
+
+**Where we are is updated on every event, not every round (added 2026-11-24).**
+The block at the top of §2 is the single answer to "where is this project now".
+It is edited in the same turn as any build, package, console run or log read —
+rounds are where drift hides — and it names the latest player build and its MD5,
+the latest GPU package and its MD5, everything built but not yet run, what has
+already run on the console, the one blocking question, who unblocks it, the exact
+next action, and the date of the last console-verified result. It carries no
+prose and no history: those belong in §4 and §9. `tools/check-manifest.py` fails
+if the block names an older player or GPU package than the newest one in
+`files/`, so the summary cannot rot silently.
+
+**Existing work is a starting point, not a tutorial (added 2026-11-24).** If a
+project has already solved the problem, use their answer — or the approach their
+code takes — rather than re-deriving it, and say which project's solution was
+used. Writing it fresh is allowed only when nothing suitable exists, nothing
+licence-clean exists, or their solution demonstrably fails on this console, and
+then the reason is written down before the work starts. This is not only about
+asking the owner for help: it is about not spending a round — and a console run
+— rebuilding what somebody else already has working. The check is cheap and the
+record is one line in §8; the cost of skipping it has already been paid twice
+(the vec2 blur radius and the per-pass `glFinish` trap, both discoverable from
+other homebrew before the first package was built).
+
+The three rounds below are **authorized as written**. Under the continuous
+progress rule (above) they are worked through in order without a fresh "shall I
+start": Round 1 begins immediately, and Round 2 begins as soon as Round 1's
+package, tests, log entry, backup and console steps exist. The stops that remain
+are the ones the rules create — the owner's console run, the owner's verdicts, the
+approval before any visualizer is ported, and anything the hard rules gate.
+
+Synced 2026-11-23 to the owner's consolidated instruction. Three rounds, one at
+a time, each finished and logged before the next starts. The queued features keep
+their place after them, and nothing renders differently until Round 2 is
+approved.
+
+### Predictions register - moved to `APPENDIX-LOGS.md` (2026-11-24)
+
+The register, the rule that governs it and every row (BREW00098's P0-P5) now
+live in **`APPENDIX-LOGS.md`**, under *Predictions register*. It moved under
+G9: a prediction with the number that would falsify it is evidence, not a rule,
+and the manifest is at its size ceiling. Before a console run, write the new
+prediction there, and fill its `Result` column in the same turn the log is read.
+
+### Round 1 — v118, logging only — **built, awaiting the console run**
+
+Built 2026-11-23, MD5 `349943cbd65ddb1580a9e47aec7de1b0`, source hashes in §4.
+The console steps and what to look for are in the round report; v117 is the
+rollback. Nothing in Round 2 may start from assumptions about this log.
+
+- At video open print the codec or fourcc, the nominal frame rate, the duration,
+  the bitrate and the resolution; add `pull_rounds` to the video summary beside
+  `pull_ok`/`pull_fail`.
+- For a `??????` filename print the raw bytes, the decoded result, and whether
+  each character has a glyph in the atlas (`src/font_atlas.c` carries ASCII
+  32–126 only), then state the cause. **Do not fix it yet.**
+- Print the open and teardown stage timings, which is where the 383.8 ms and
+  250.2 ms frames land.
+- **No player logic changes.** Built as **v118** with its own MD5 and a source
+  hash, `make check` plus the preview build, and **v117 stays the rollback**.
+- Console steps go in the round report: which file to open, what to play, how
+  long to wait, which log to pull, and what to look for in it.
+
+### Round 2 — GPU proof of concept — **effect proven 2026-11-24, cost bounded**
+
+Status, before the plan text below: the bloom chain was built and run in its own
+packages (BREW00094 to BREW00103), it draws on the console, and the numbers say
+one chain is under about 0.5 ms by the CPU bound - a six-pass chain at most ~3 ms
+of a 16.7 ms frame (R24/A6, §9 A6). What is **not** proven is the look port and
+SDL/Piglet surface sharing, which Round 3 needs. The bullets below are kept as the
+plan that produced it, with one correction: the logging rule is now R22 - **one**
+sink in `/data/Alpha PS4 test kit/`, not one at `/data` and one in the player's
+folder.
+
+- A **separate package with its own title id**, built from the OpenOrbis 0.5.2
+  Piglet sample. It never replaces the player, changes no player source, and
+  uses **no player version number** — v118 stays the player's next number.
+- Keep the stage-numbered, fsynced logging that worked in v3: `sceKernelOpen` /
+  `sceKernelWrite` / `sceKernelFsync`, one sink at `/data` and one at
+  `/data/ultimate-ps4-media-player/`, heartbeats and per-frame timings.
+- **One look, the one with the biggest visible gain**, with the reason written
+  down. 1920x1080 through Piglet on half-float render targets, a bloom chain
+  (scene, bright-pass to a smaller target, blur, composite), ping-pong trails
+  where the look gains from them, and real per-band audio analysis — log-spaced
+  bands, per-band beats with a refractory interval and geometric decay, packet
+  interpolation, automatic gain.
+- Frame times in every summary: the **GPU timer query if it works, CPU frame
+  time otherwise, and every number labelled with which one it is**.
+- The answer is measurements: cost at 1080p, whether it holds 60 fps, and the
+  worst frame.
+- Install, run, close and log-pull steps, ending with "look at this on the
+  television and report it": resolution, smoothness, glow, anything wrong.
+
+### Round 3 — plans only, after Round 2 is logged
+
+- **SDL and Piglet handover.** Options — the visualizer as a full-screen mode
+  that hands the display over and back, the whole interface drawn through
+  Piglet, or a hybrid — each with its cost, its risk, what Round 2 measured
+  about it, and the test that would settle it. One recommendation with reasons;
+  where Round 2 already shows sharing works or fails, that evidence is used and
+  said so.
+- **A 60 fps budget for the visualizers.** From the measured Round 2 numbers, a
+  16.7 ms budget split across audio analysis, scene, bloom and composite; for
+  each of the eighteen looks whether it can hold 60 fps on the GPU, what it must
+  drop or simplify if not, and which need the most work. Plus a quality fallback
+  that steps a look down by itself, and what each step trades away.
+- Both written into `files/round7/README.md` and this manifest. **Nothing built.**
+
+The three items the owner still owes — what the sample showed on the television,
+the v117 header, the v116 verdict — are recorded as unreported in §2, and no
+round below depends on them.
+
+### After the three rounds
+
+4. **Filenames and languages** — font coverage and the UTF-8 path, once Round 1
+   has said whether the name arrives mangled or the atlas lacks the glyphs. Needs a
+   glyph set well beyond ASCII 32–126, which is all `src/font_atlas.c` carries
+   today.
+5. **Settings screen** — the natural home for `[quality] budget_ms`, the quality
+   steps and whatever knobs the proof of concept adds; worth building after that
+   proof, not before.
+6. **Search and library index with metadata tags** — the biggest of the queued
+   features and the one that depends on how the library is keyed, so it follows
+   settings rather than leading.
+7. **The visualizer overhaul of all eighteen looks, from the owner's feedback** —
+   last, and only after the proof of concept is approved. Nothing is rewritten
+   before that: the audit's order (WORM, RAVE DJ, WINDMILL, the DANCE family,
+   then the cheap spectrum looks) is a proposal, not a start.
+8. Then A3 and A4 on whatever still runs on the software canvas, and Stage C–E
+
+## 12. PS4 development standard (merged 2026-11-24)
+
+**Changelog:** 2026-11-24 — the owner's "PS4 Development Manifest: build any
+program, to professional standard" was merged into this file as §12, following
+its own Part 1 rules: nothing existing was deleted, rewritten or weakened, an
+existing rule was left alone where it already says the same thing, and every
+conflict is listed below with the existing rule kept. `AGENTS.md` carries the
+same pointer and the rules that change how code is written. Parts 1–13 of the
+owner's document are summarised here; the document itself is the source, and
+where this summary is shorter it is the summary that is wrong.
+
+**What it is for:** the project is no longer only the media player. Any PS4
+program may be built — media player, visualizer, game, emulator port, utility,
+file or network tool — to a professional standard, using this hardware and the
+open homebrew tools. The player stays the main goal (§1); this section is what
+applies to every job under it.
+
+**Merge rules, adopted as project rules.** Existing rules stay; a rule that
+already exists keeps its wording; a conflict keeps the existing rule and is
+reported to the owner for a decision, except where the new rule protects the
+owner's files and data, the legal rules, or the stability of the build. Priority
+order, highest first: (a) never delete or damage the owner's files, config, logs
+or data; (b) legal and clean-room rules; (c) keep the build and the console app
+stable; (d) hardware limits and the frame budget; (e) visual and feature
+quality; (f) everything else. New rules go at the end of their section; sections
+stay labelled and numbered.
+
+**Startup checklist, before any job.** Read this manifest and `AGENTS.md`; state
+the current version, what it contains and which parts have actually run on the
+console; list the protected files and everything the job could touch; list the
+reference sources relevant to it; write or update the plan; list what is unknown
+or cannot be verified and ask for missing definitions. Never guess a plan, rule
+or hardware fact.
+
+**Plan before building.** Every job gets a short plan in this file before code:
+Goal (plain words, and what done looks like), Platform facts (firmware,
+libraries, memory, controller, display, storage paths), Architecture (modules,
+data flow, which thread does what), key algorithms and data structures, the
+functions and system APIs with the source that documents each, the file map,
+the budget in real console numbers, the risks and how each is tested on the
+console, and the test plan for the owner. Small changes get a short plan; a new
+program gets the full plan and the owner's approval before it is built.
+
+**Reference sources, in this order, never guessed.** OpenOrbis toolchain (docs,
+samples, `include/orbis` headers) → ps4libdoc → PS4 Developer Wiki → LibOrbisPkg
+(package and param inspection) → the ConsoleMods OpenOrbis SDK page → open-source
+PS4 homebrew using the same library. Graphics technique reference, for ideas and
+formulas only, never pasted code: tinyrenderer, GPU Gems 1–3 (glow, water,
+volumetric light, shadows, bloom, depth of field), Inigo Quilez's articles,
+GDC talks and postmortems, Shadertoy for inspiration only. General algorithms
+and formats: standard textbooks and the format's own specification. Where a
+licence is unclear, learn the idea and write the code yourself. One unverified
+lead is recorded as such: `uomar8/ps4-dev-knowledge-base` — it could not be
+opened when checked, so it is a lead to verify, not a source.
+
+**Protected files — additions to the §7 list in `AGENTS.md`:** `library.idx`,
+`THIRD_PARTY.md`, `LICENSE`, the packaging inputs `sce_sys/` (including
+`param.sfo` and `icon0.png`) and `sce_module/`, and anything referenced by the
+Makefile, the source, the README, the scripts or the tests. Keep a copy of
+`param.sfo` before regenerating packaging files. Never delete a file this
+session did not create; never delete anything without showing the exact list
+first; prefer moving to `files/archive/`; when unsure, keep it.
+
+**Working like a console developer, for every graphics or performance task:**
+name the look in one sentence and which shipped game or app does it well; find
+the technique in the sources above and name where it was found; budget it in
+real console numbers and say which quality step it belongs to; fake it cheaply
+(baked layers, lookup tables, sprites, low-resolution buffers for soft effects,
+slower updates for slow things, screen-space post effects); write original code;
+prove it with before-and-after renders and frame times at the step the console
+actually runs; document it here and in `config.ini`. Techniques expected at this
+standard: low-resolution bloom and glow, layered fog and light shafts, soft and
+contact shadows, water (depth gradient, Fresnel, refraction offset, caustics,
+foam, glints), glossy-floor reflections, lookup tables, sprites and impostors,
+budgeted particles, color grading, dithering and grain, level of detail,
+temporal reuse, procedural noise, eased curves. Results are judged on a clear
+focal point, depth in layers, a cohesive palette with one or two strong lights,
+motion tied to the audio, and no banding, shimmer or hard stripes where a soft
+gradient belongs.
+
+**Honesty and testing, unchanged and restated:** say what ran only on the host
+preview and what ran on the console; measure before and after at all three
+quality steps, three runs each; nothing more than ~20% slower at the default
+step without a stated reason; every tweakable in `config.ini` with a comment and
+a default; one config file and one log file per program with levels, tags,
+uptime timestamps, run separators, a rotation cap and a summary at exit; a
+screenshot button saving a BMP into a capped folder so the television never has
+to be photographed; long-run crash and memory-growth checks; problems reported
+including what could not be verified.
+
+**Legal, unchanged and absolute:** public documentation, open samples and
+original code only; no leaked SDK material, no leaked source, no code copied
+from a reference; third-party licences in `THIRD_PARTY.md` for anything actually
+shipped; respect other people's data and accounts; no features that bypass
+protections on content or services the owner does not own; no secrets on the
+console or in the workspace.
+
+**Future-proofing:** keep the resource index (§8 plus §9's references), the known
+limits (§7 and §9), the open questions (§10) and the decisions log (§5) current,
+with the version that used each source; ask for any definition that is missing
+rather than inventing it; check a library's or tool's current documentation and
+record the version relied on, because toolchains and firmware move.
+
+### Conflicts found while merging, existing rule kept
+
+| The merged document says | This project already has | Kept |
+|---|---|---|
+| Software rendering is the proven graphics path; the toolchain's GL renderer produced broken output elsewhere, so treat GPU as an experiment never assumed | The Piglet sample has since run on **this** console: modules load, EGL 1.4, `GL_RENDERER: Piglet`, 119.9 fps on a quad, half-float targets COMPLETE | Ours. GPU is an experiment that has already passed its first test here (AGENTS.md, §9 R1–R12). The other port's broken GL renderer is recorded as a different stack's result, not as evidence about Piglet. |
+| Every visualizer pays a flush cost of roughly 22–27 ms while video pays under 1 ms for the same step | Measured: the floor is 21.6–24.5 ms with video under the canvas raising it to 29–37 ms; video drawn with no canvas costs 1.4 ms | Ours, by measurement; the document's range is inside our floor and its video figure matches only the no-canvas case. |
+| The log's first-texture format reads ARGB8888 while the display reads ABGR8888 — a possible per-pixel conversion cost, unconfirmed | Measured: the window surface is created as 24-bit `BGR888` and presenting memsets 8.3 MB, copies at 4 B/px, then waits for the flip | Ours. The ARGB/ABGR swap is recorded as an **unconfirmed lead**; nothing is built on it until a log shows the swap. |
+| No zips unless asked | One package per build, plus its MD5, no zips ever | Ours — stricter, so the stricter wording stands. |
+| New programs get the full plan and are approved before being built | Rounds in §11 are authorized in advance; proof-of-concept work proceeds without a fresh start | Both stand: authority is granted per round in §11, and a program not named there still needs its plan approved first. |
+
+### What a console developer would expect that this document does not yet cover
+
+1. **A memory budget per job**, not just a pool size: how much of the 4.6 GB direct
+   pool a look, a decoder and a UI may each hold, and what happens on exhaustion.
+2. **A crash and hang runbook**: what to check first, which log tail matters,
+   how to get back to a known-good package, and how to tell a driver fault from
+   ours.
+3. **A performance regression gate**: a fixed benchmark, run per round, whose
+   numbers are compared rather than re-derived (the drift-control rule exists
+   but there is no fixed suite).
+4. **An input latency target** and how it is measured, since frame time alone
+   does not say how the pad feels.
+5. **Thermals and sustained clocks**: whether a long visualizer run drops clocks
+   on this console, which would change every steady-state number.
+6. **A save/config migration rule**: what happens to an owner's `config.ini` when
+   keys are renamed or removed, so settings never silently reset.
+7. **A clean-room note format**: for each borrowed idea, one line naming the
+   reference and what was written independently — the legal rule asks for it but
+   nothing records it.
+8. **A definition of "professional"** measurable on this hardware: a frame-time
+   ceiling per quality step, a resolution floor, and a list of looks that must
+   hold it.
+
+### The gaps, as rules G1–G10
+
+The ten rules that came out of the gap list above are written **in full in
+`AGENTS.md`** under "Rules G1–G10", because that is the file every job is run by and
+rules belong where they are obeyed. One line each: G1 memory budget per subsystem,
+G2 crash and hang runbook, G3 fixed benchmark, G4 input latency, G5 thermals, G6
+`config.ini` migration, G7 clean-room note, G8 "professional" defined, G9 size
+ceilings, G10 a new project gets its own file.
+
+## Declared absent from this copy
+
+Quoted in this file, present in neither the working tree nor the publish output; recorded
+so the R35 check does not read them as broken (R38).
+
+- `CHANGELOG.md`
+- `Loader_Logs.txt`
+- `nv12.h`
+- `docs/ROOT-POINTER.md`
+- `docs/TECHNICAL.md`
+- `_scratch/linttest/mutate.py`
+- `Piglet-GPU-Test-BREW00093-logged-v3.pkg`
+- `files/GPU-Bloom-Slope-Probe-BREW00103.pkg`
+- `files/Ultimate-Media-Player-v118.pkg`
+- `files/bootstrap-toolchain.sh`
+- `files/round7/README.md`

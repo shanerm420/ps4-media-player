@@ -1,0 +1,395 @@
+{
+ "generated_from": [
+  "MANIFEST.md section 9",
+  "AGENTS.md G-rules"
+ ],
+ "count": 48,
+ "rules": [
+  {
+   "id": "G1",
+   "kind": "G",
+   "status": "measured",
+   "evidence": "A plan is not\ncomplete until it names a ceiling for each part that allocates: UI and canvas,\ndecoder buffers, effects and intermediate targets, and headroom. The ceilings\nmust sum to no more than **60% of the direct pool**, so a job cannot pass its\nown test and still starve the next feature. The v118 line\n`video: engine 1 holds 4 blocks / 19.1MB of the 4608MB direct pool` is the\nsensor for the decoder part; effects add their own report. When a subsystem\nreaches its ceiling, log it by name and degrade (drop a target size, skip a\npass) rather than failing to open the file. Starting split, **assumed, to be\ncorrected by measurement**: UI and canvas 25%, decoder 40%, effects 20%,\nheadroom 15%. Nothing may quote those four numbers as measured.",
+   "statement": "Memory budget per subsystem, stated in every plan.",
+   "falsifier": "a plan that runs with no per-subsystem memory budget anywhere in it"
+  },
+  {
+   "id": "G2",
+   "kind": "G",
+   "status": "procedural",
+   "evidence": "In order, before any investigation: (1) is the\npackage still the one you meant — check the MD5; (2) pull the log and read the\n**last** ten lines, not the first — a stage marker with no successor names the\nstep that stopped; (3) is it a hang or a crash — a hang keeps the last frame and\nstops logging, a crash ends the log mid-line or leaves `kernel` fault text;\n(4) remove one variable (another file, another look, another quality step) and\nre-run once, not five times; (5) reinstall the previous package to confirm the\nconsole is still healthy, which separates our fault from the console's; (6) only\nthen write the cause into §6. Never debug on the console by repeatedly\nreinstalling: one variable per run, and the log decides.",
+   "statement": "Crash and hang runbook.",
+   "falsifier": "a crash or hang handled without the runbook's first check being performed"
+  },
+  {
+   "id": "G3",
+   "kind": "G",
+   "status": "procedural",
+   "evidence": "One benchmark,\nunchanged between rounds: the host preview `seq` over the named looks at the\nthree quality steps, three runs, plus `one-shot.bmp` MD5s for the pixels. Numbers\nand MD5s go in `files/bench/<version>.txt` and a round states the delta against\nthe previous file, not against memory. A round that changes rendering without a\n`files/bench` line is not finished. The console remains the decider; the\nbenchmark exists so the console run is the only expensive measurement.",
+   "statement": "A fixed benchmark, compared rather than re-derived.",
+   "falsifier": "two rounds comparing benchmark numbers taken with different harnesses"
+  },
+  {
+   "id": "G4",
+   "kind": "G",
+   "status": "assumed",
+   "evidence": "Poll-to-photon for one\nbutton is part of any round that touches input: press a button that changes\nsomething visible, capture at high frame rate or read the log's own frame\nindices, and state the delay in frames. Target: **two frames or fewer** at the\nstep the console runs. If a change buys frame time by adding a frame of delay,\nthat is a loss and it is logged as one.",
+   "statement": "Input latency, target two frames, not yet measured here.",
+   "falsifier": "a measured input-to-photon latency above two frames (33 ms at 60 Hz)"
+  },
+  {
+   "id": "G5",
+   "kind": "G",
+   "status": "assumed",
+   "evidence": "Any run longer than five minutes states\nwhether the last minute was slower than the first. Compare the first and last\nsixty seconds of frame times from one log; a drop over 5% is recorded as a\nsustained-clock question in §10, not smoothed away. Until a console reading settles it,\nlong-run numbers are quoted with their position in the run. The 5% threshold is an assumed starting point, not a console\nfinding.",
+   "statement": "Thermals and sustained clocks.",
+   "falsifier": "a long run whose frame times climb while the workload does not change"
+  },
+  {
+   "id": "G6",
+   "kind": "G",
+   "status": "procedural",
+   "evidence": "Renaming or removing a key\nkeeps the old name readable as an alias for one version, logs\n`config key renamed <old> -> <new>`, and leaves the owner's value in place. A key\nthat is removed is logged as ignored, not dropped without a word. The startup\nline `config loaded … (N keys, M missing, B bad, U unknown)` is the check: `bad`\nand `unknown` rising is a migration bug in our code, not a user error.",
+   "statement": "`config.ini` migration, never a silent reset.",
+   "falsifier": "a build that drops a config key with no log line and no migration note"
+  },
+  {
+   "id": "G7",
+   "kind": "G",
+   "status": "procedural",
+   "evidence": "Whenever a reference shapes\nsomething, one line goes into §8: the technique, the reference, and what was\nwritten here independently. Original code is not negotiable (§12 legal), and\nthis is the record that proves it was.",
+   "statement": "A clean-room note per borrowed idea.",
+   "falsifier": "a shipped technique with no clean-room note naming its reference"
+  },
+  {
+   "id": "G8",
+   "kind": "G",
+   "status": "measured",
+   "evidence": "At 1080p: a visualizer\nholds **≤ 50 ms (3 vsyncs)** at the step the console actually runs, and draws at\n**no less than 1640x560** for the look box before any step-down — the box size\nthe console already uses. Any look that cannot hold both states which one it\ntrades and why, in §6. Chrome and menus hold **≤ 33.4 ms (2 vsyncs)** — already\nmeasured on the music list. These are ceilings, not goals: a look that meets them\nis finished even if it could be prettier, and a look that misses them is not\nfinished even if it looks good.",
+   "statement": "\"Professional\" defined so it can be failed, from the v112 and v115 console runs.",
+   "falsifier": "a look that meets every stated ceiling and is still rejected as unprofessional"
+  },
+  {
+   "id": "G9",
+   "kind": "G",
+   "status": "procedural",
+   "evidence": "`AGENTS.md` **must not grow past its\n**640 lines** (635 when these rules were added on 2026-11-24, the plan text included, so the five lines of headroom are not an invitation) and this file's rules\nsections (§5, §11's reply rules, §12) must not grow past 900. The target is\nsmaller: 400 lines of rules, reached the first time the plan text is touched, by\nmoving that text to an appendix with a pointer. History, evidence and the knowledge base are not\ncounted and may grow without limit. When a rules section would pass its ceiling,\nthe older rule moves to an appendix with a one-line pointer — never deleted,\nnever weakened, just out of the way of the rules somebody has to read before\nstarting work. A rules file nobody finishes reading protects nothing.",
+   "statement": "The rules core has a size ceiling.",
+   "falsifier": "MANIFEST.md over 131072 bytes"
+  },
+  {
+   "id": "G10",
+   "kind": "G",
+   "status": "measured",
+   "evidence": "Anything that is\nnot the media player — a game, a tool, a port — gets its own `AGENTS.md` and\nmanifest that inherit the ten rules above and this project's evidence standard,\nand that do **not** inherit Liquid's water bands. The shared core stays here;\nthe new file holds only its own facts. Before the first build, the new project\nreports the startup checklist (§12) against its own file.\n\n### Amendments (A-numbered)\n\nThe register of rules that later evidence changed. The rule now reads as amended and\nthe old wording is kept here so a future reader can see what moved and why; the\nmanifest §9 points here.\n\n**A1 — per-pass `glFinish` as a GPU timing method.** *Before:* \"per-pass timings\nare GPU-side: `glFinish()` at every pass boundary\" — implying a finish per pass\nreturns that pass's GPU cost. *After:* `glFinish()` per pass costs **~13–14 ms\nregardless of pass size** (a 480x270 pass measured 14.6 ms against 18.3 ms for (§9)\n1920x1080), so it measures the round trip, not the work; only whole-frame timing\nis trustworthy, and cost is established by **differencing configurations**\n(BREW00098's A–E), with timer queries as the alternative when the entry points\nexist. *Evidence:* `gpu-bloom97.log` 2026-11-24, 22 reports; corroborated by the\nvendor-neutral rule that per-pass finishes stall both CPU and GPU. *Status:*\nmeasured on this console; rule R15.\n\n**A2 — `u_blurRadius` typed as a vec4.** *Before:* \"`u_blurRadius type=0x8B50`\n(vec4 — an x/y radius pair with room for two more components)\". *After:*\n`0x8B50` is **`GL_FLOAT_VEC2`**; it is set with `glUniform2f(p, 1/w, 0)` for the\nhorizontal pass and `(0, 1/h)` for the vertical, and a `glUniform4f` is rejected\nwith `illegal to set uniform data with different types`, leaving the uniform and\nthe kernel at their defaults. *Evidence:* `gpu-bloom97.log` 2026-11-24, the\n`[PIG]E-glUniform4f:8900` line plus `CHK pass-blur glerr=0x0502`; the earlier\n`blur1` and `blur2` figures in that run are void because of it. *Status:*\nmeasured on this console; rule R16.\n\n**A3 — treating a difference between configs as the cost.** *Before:* \"cost is\nestablished by **differencing configurations** (BREW00098's A–E), with timer\nqueries as the alternative when the entry points exist\". *After:* differencing\nonly sees work larger than the present floor (§9 R20) — `A empty` measured\n8.19 ms and `B scene`, a 1080p ramp plus 2,000 sprites, measured 8.32 ms (§9 R20), which\nis the flip and not the draw (§6). Cost is measured by **repetition slope**: run N\npasses per frame at N = 1, 4, 16, fit the line, and read the slope; the\nintercept is the floor and is reported separately. Differencing stays valid only\nwhere the work clearly exceeds the floor. *Evidence:* `gpu-bloom98.log`\n2026-11-24: `CONFIG empty frames=120 ms=8.19 fps=122.1` (§9 R20) and\n`CONFIG scene … ms=8.32` (§9 R20), then config C died. *Status:* measured on this console; rule R20.\n\n**A4 — \"the type was wrong\" read from the console's log.** *Before:* A2 concluded\n`u_blurRadius` is `FLOAT_VEC2` and \"is set with `glUniform2f`\". *After:* the driver\nreports `u_blurRadius type=0x8B50 FLOAT_VEC2 size=1 **loc=49**`, and\n`glUniform2f` **at that same location** is refused with the identical\n`illegal to set uniform data with different types`, while `glUniform1fv` on\n`u_gaussianKernel[0]` (loc=51) answers `Failed to retrieve uniform info`. So the\n**location** the driver returns is not usable by its own setters, and no type\ninference from the log can fix it. The rule is now: probe every set once, at link,\nbefore any frame is timed; skip a uniform that refuses, and never spend a frame\ndiscovering it. *Evidence:* `gpu-bloom99.log` 2026-11-24, the `SET`/`UNI` block\nplus three `state=VOID err=0x0502` configurations. *Status:* measured on this console; rule R21. Superseded by A5.\n\n**A5 — setting a uniform on a program that is not bound.** *Before:* A4 said the\nlocation `glGetUniformLocation` returns \"is not usable by its own setters\".\n*After:* setters act on the **currently bound** program (ES2 spec) and nothing was\nbound, so every `SET` answered `Invalid program!`; BREW00097-101's \"different\ntypes\" was the same mistake (loc 49 on texmap is `u_opacity`, a float). Bind with\n`glUseProgram` first. *Evidence:* `gpu-bloom101.log`, `SET … REFUSED 0x0502` beside\n`[PIG]E-glUniform2f:8372 - Invalid program!`. *Status:* measured; R22; replaces A4.",
+   "statement": "A new project starts its own file, and links back.",
+   "falsifier": "a second program whose rules were appended to this manifest instead of its own file"
+  },
+  {
+   "id": "R1",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "GPU test v3, MD5 `4d556822b249fcf1c3f55a044d806fa2`, log §4/§9",
+   "statement": "The Piglet ES2 path works on this console: firmware modules load, EGL 1.4 comes up, `GL_RENDERER: Piglet`, frames present",
+   "falsifier": "a console run on 12.52 where a Piglet module fails to load or EGL stops below 1.4"
+  },
+  {
+   "id": "R2",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`piglet-gpu-test-v3.log`, extension scan",
+   "statement": "Half-float render targets work; 32-bit float render targets do not; no float blending, no framebuffer fetch, no sRGB framebuffers — so feedback is ping-pong targets",
+   "falsifier": "a 32-bit float render target created successfully, or a half-float target failing"
+  },
+  {
+   "id": "R3",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`piglet-gpu-test-v3.log`",
+   "statement": "Maximum texture and renderbuffer size 4096, viewport 4096x4096",
+   "falsifier": "a texture or viewport larger than 4096 that the console accepts"
+  },
+  {
+   "id": "R4",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`piglet-gpu-test-v3.log`, frame timestamps",
+   "statement": "The sample's 119.9 fps is a textured quad with no shader load, no bloom and no SDL window beside it — it is **not** a budget for a look",
+   "falsifier": "the same textured quad still near 119.9 fps with an SDL window and a bloom chain beside it"
+  },
+  {
+   "id": "R5",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "v112/v116 logs, `AGENTS.md`",
+   "statement": "The SDL present path costs 21.6–24.5 ms a frame on every screen, including one that draws nothing",
+   "falsifier": "any screen whose present cost measures below 21.6 ms"
+  },
+  {
+   "id": "R6",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`files/round7/README.md` §2",
+   "statement": "No look fits a 60 Hz frame at step 1, even on the host: 27.8–75.4 ms",
+   "falsifier": "a host step-1 look measured below 27.8 ms, or any step-1 look at or under 16.6 ms - the range and the 60 Hz claim are two propositions and either one failing falsifies the rule"
+  },
+  {
+   "id": "R7",
+   "kind": "R",
+   "status": "assumed",
+   "evidence": "pending BREW00098 (the measurement that will produce it)",
+   "statement": "What a real 1080p look costs on this GPU",
+   "falsifier": "any measured 1080p look cost, which replaces the assumption with a number"
+  },
+  {
+   "id": "R8",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`files/round7/README.md` §2, MilkDrop/projectM model",
+   "statement": "Audio reaction is one global beat list today; per-band beats with a refractory interval and geometric decay, log-spaced bands, packet interpolation and automatic gain are the researched model",
+   "falsifier": "per-band beats shipped with no refractory interval and no regression observed"
+  },
+  {
+   "id": "R9",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "v117 `app.log`, `boot: libGLESv2 rc=0x80020002`",
+   "statement": "There is no `libGLESv2.sprx` on this console, so GL work links Piglet by name instead of going through SDL's GL lookup",
+   "falsifier": "libGLESv2.sprx present on the console and linked successfully"
+  },
+  {
+   "id": "R10",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "toolchain `bin/linux` listing; `PigletApplication.cpp:29,36,356`",
+   "statement": "**Piglet ES2 can only use shaders that already exist as blobs in `libScePrecompiledShaders.sprx`** — OpenOrbis 0.5.2 ships no GLSL compiler, and the runtime compiler is a devkit module this console does not have",
+   "falsifier": "a shader compiled at runtime on this Piglet path"
+  },
+  {
+   "id": "R11",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`gpu-shader-cat.log` 2026-11-24: `82 entries`, `blur1`/`blur2`, `status=0x8CD5 COMPLETE`",
+   "statement": "**A bloom chain is assemblable from existing blobs**: separable blur pair, brightness/contrast, opacity and texmap composite, on a complete half-float target",
+   "falsifier": "a bloom stage with no existing blob that the chain still needs"
+  },
+  {
+   "id": "R12",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`gpu-shader-cat.log`, 82 entries; R10",
+   "statement": "There is **no per-pixel custom shader** on this path — no fluid solve, raymarch, refraction or true bright-pass threshold",
+   "falsifier": "a working custom fragment shader on this path"
+  },
+  {
+   "id": "R13",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`gpu-bloom.log`: `link=1 glerr=0x0000` ×5, `u_gaussianKernel[0] size=11`, `u_blurRadius type=0x8B50`, `u_filterAmount type=0x1406`",
+   "statement": "**The blur programs are an 11-tap Gaussian with a vec4 radius, and every program in the chain links**",
+   "falsifier": "a blur program whose tap count or radius uniform type differs from 11 taps and vec4"
+  },
+  {
+   "id": "R14",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`gpu-bloom96.log`: `BLOOM … blur1=0.00 comp=0.03 total=8.78ms` with `fps=113.9`; timing must use `EXT_disjoint_timer_query` or `glFinish`",
+   "statement": "**CPU timers around GL draws measure submission, not execution** — a 1080p composite reported at 0.03 ms and a blur at 0.00 ms are queue times, not GPU work",
+   "falsifier": "a CPU-timed draw whose figure matches the GPU-measured figure for the same pass to within the repeat-to-repeat spread of three runs of that pass - noise is defined as that spread, not asserted"
+  },
+  {
+   "id": "R15",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`gpu-bloom97.log`: `bright=14.61` at 480x270 vs `scene=18.30` at 1920x1080; four finishes a frame turned 10.3 ms into 66.7 ms",
+   "statement": "**`glFinish()` per pass costs ~13–14 ms on Piglet**, independent of the pass size — a 480x270 pass measured 14.6 ms against 18.3 ms for 1080p",
+   "falsifier": "a pass whose glFinish cost falls outside 13-14 ms"
+  },
+  {
+   "id": "R16",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`[PIG]E-glUniform4f:8900` + `CHK pass-blur glerr=0x0502` in `gpu-bloom97.log`; corrects the earlier vec4 note in §4",
+   "statement": "**`u_blurRadius` is a `vec2` (`0x8B50`), not a vec4** — set it with `glUniform2f`; a wrong type is rejected with `illegal to set uniform data with different types` and silently leaves the kernel at defaults",
+   "falsifier": "a vec4 upload to u_blurRadius that the driver accepts and renders correctly"
+  },
+  {
+   "id": "R17",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "our `gpu-shader-cat.log` `TARGET … 0x8CD5 COMPLETE`; ioQuake3-PS4 reports \"no GL_RGBA16F in GLES 2\" and forces RGBA8",
+   "statement": "**`GL_RGBA16F` does not exist in ES2, but a half-float render target does** — `internalformat GL_RGBA` + `type GL_HALF_FLOAT_OES` (0x8D61) completes; a port that asks for `GL_RGBA16F` gets a failure and wrongly concludes half-float is unavailable",
+   "falsifier": "GL_RGBA16F accepted as an internalformat, or a half-float target failing to create"
+  },
+  {
+   "id": "R18",
+   "kind": "R",
+   "status": "researched only",
+   "evidence": "shipofharkinian-ps4 TECHNICAL.md; Stremio-PS4 `platform_ps4.cpp`",
+   "statement": "**`eglSwapInterval(1)` after `eglMakeCurrent` blocks `eglSwapBuffers` forever**; set it before the surface is created, or use 0",
+   "falsifier": "a build that sets eglSwapInterval after eglMakeCurrent and still swaps"
+  },
+  {
+   "id": "R19",
+   "kind": "R",
+   "status": "researched only",
+   "evidence": "shipofharkinian-ps4 TECHNICAL.md; the numbers to start G1's budget from",
+   "statement": "**Piglet memory comes from a flexible limit set at `scePigletSetConfigurationVSH`** — a working split is 128 MiB system shared / 512 MiB video shared / 236 MiB flexible / 4 MiB command buffers, textures and render targets out of the flexible share, a 1080p framebuffer pair over 64 MiB",
+   "falsifier": "Piglet memory obtained without scePigletSetConfigurationVSH"
+  },
+  {
+   "id": "R20",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`gpu-bloom98.log`: `CONFIG empty … ms=8.19` and `CONFIG scene … ms=8.32`. The method is repetition slope: run N passes per frame at N = 1, 4, 16, fit the line, read the slope. Differencing stays valid only for work larger than the floor. The slope is a CPU-side window, so it cannot resolve work below a frame press: [superseded A6]",
+   "statement": "**Frame timing here sits on a ~8.3 ms present floor, so differencing two configs cannot see the work** — `A empty` measured 8.19 ms and `B scene` with a 1080p ramp and 2,000 sprites measured 8.32 ms, a 0.13 ms difference for work that cannot plausibly be free; anything drawn under the floor disappears into the flip",
+   "falsifier": "a present cost below the 8.3 ms floor, or two configs differing by less than the floor and still distinguishable"
+  },
+  {
+   "id": "R21",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`gpu-bloom99.log`: the `UNI`/`SET` block, then `CONFIG n1/n4/n16 … state=VOID err=0x0502`. Rule: try each set once at link, drain the error, print the result, and skip a uniform that refuses (A4). A skipped uniform leaves the driver's defaults, so the picture is not the intended one but the pass cost is unchanged",
+   "statement": "**A uniform's set must be probed before it is trusted; the location the driver returns is not always accepted by the driver's own setter** — `u_blurRadius` (reported `0x8B50 FLOAT_VEC2`, loc 49) refuses `glUniform2f` at that location with `illegal to set uniform data with different types`, and `u_gaussianKernel[0]` (loc 51) refuses `glUniform1fv` with `Failed to retrieve uniform info`, each leaving sticky `0x0502`",
+   "falsifier": "a uniform whose returned location works without being probed"
+  },
+  {
+   "id": "R22",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "One path via `sceKernelMkdir` + retry, then `sceKernelUnlink` over an **exact-name** table (no patterns), logging `CLEAN removed=N refused=M`. The player's `app.log`, `app.old.log`, `config.ini` and `shots/` are never in it",
+   "statement": "**One log, in `/data/Alpha PS4 test kit/`, and delete what earlier builds left** — old builds opened seven sinks at once, so every run scattered copies that had to be deleted by hand",
+   "falsifier": "a run writing to two log sinks at once"
+  },
+  {
+   "id": "R23",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "`all` depends on `check`: SFO parses, 11 entries, required keys, CONTENT_ID/TITLE_ID match the Makefile, 36-char id, `CNT` magic, not truncated. `make clean` after any interrupted build",
+   "statement": "**No package is handed over until `tools/check-pkg.py` passes it** — BREW00102 installed as Corrupted Data (`CE-33481-9`) then refused to start (`CE-34544-0`): its `param.sfo` had 7 entries of 11, because a killed build left it half-written and `make` kept it",
+   "falsifier": "a package handed over that tools/check-pkg.py fails"
+  },
+  {
+   "id": "R24",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "`gpu-bloom102.log` BREW00102 `CONFIG empty draw_ms=16.656`, `n16 16.659`, `n64 33.340`. Wrap the frame in `GL_TIME_ELAPSED_EXT` via `EXT_disjoint_timer_query` and fit the slope on `gpu_ms`; report a CPU window as \"< one frame\" and name the instrument behind every number",
+   "statement": "**GPU cost comes from the GPU clock; a CPU window is only an upper bound** — draws + `glFinish` with no swap in the window still gave 16.656 ms at N = 0, 16.659 at N = 16, 33.340 at N = 64",
+   "falsifier": "a CPU-window figure that equals GPU time exactly while the GPU clock was low"
+  },
+  {
+   "id": "R25",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "Order: ES2/EGL spec → this project's §9 facts → `shipofharkinian-ps4`, `Stremio-PS4`, `shadPS4` → a console run. Findings in `PIGLET-NOTES.md`; borrowed ideas get a clean-room note (§8)",
+   "statement": "**Read what other PS4 homebrew and the ES2 spec already solved before a round** — two console runs (A4, A5) went into a uniform question the spec answers in one line",
+   "falsifier": "a round that rediscovers a fact already written in section 9 or PIGLET-NOTES.md"
+  },
+  {
+   "id": "R26",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "Before any build, console run, research task or report step: reread §2, §6, §8, §9, `PIGLET-NOTES.md` and the amendments, and state in one line **which recorded fact the step tests** and **what is genuinely new**. If the answer is already recorded, do not spend the run - cite it instead. If a step duplicates one already in the plan, drop it. Applies to every build and every future project (G10 inherits it); a round that skips this reflection is a defect in the round, whatever the build",
+   "statement": "**Reflect on this manifest before every step, and verify that step against it** — the owner had to point out that BREW00102's timing question was already published (`shipofharkinian-ps4`) and the uniform question was answered by the ES2 spec, after both had been sent to the console as tests; work that repeats a recorded answer is waste, and it is the owner's time being spent",
+   "falsifier": "a step taken that contradicts a rule already in the table"
+  },
+  {
+   "id": "R27",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "Every console request names the one unknown it closes and quotes the recorded fact it does *not* contradict. A run to confirm the display contract, the module load, the memory class, the packaging route, the log path or uniform binding is refused, and the recorded line is cited instead. Hardware questions go to §7 \"settled\" list first; only behaviour absent from it can be tested",
+   "statement": "**The hardware is known: never spend a run on what §7, §9, `PIGLET-NOTES.md` or the measurement rules already settle** — BREW00103 was queued to ask \"why 16.66 ms\" when the measurement rules have said since v112 that every frame waits on the display and lands on whole 16.7 ms multiples; the owner had to say so",
+   "falsifier": "a run whose question was already answered in section 7 or section 9"
+  },
+  {
+   "id": "R28",
+   "kind": "R",
+   "status": "assumed",
+   "evidence": "One package, no model branches. Every number names the model; a Pro result is an upper bound and the base PS4 is the budget floor. Firmware and GoldHEN are per-console setup, not features of the software",
+   "statement": "**The target is the PS4 family, not this one console** — the work is PS4 software, and PS4 is the common denominator: same OS, same GLES2/Piglet, same audio, video, pad and package interfaces on every model, so working PS4 software runs on all PS4s",
+   "falsifier": "a behaviour measured here that is documented as different on a base PS4"
+  },
+  {
+   "id": "R29",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "Before writing anything, look in this order: this repository's own proven code (`src/applog.c`, the UI text renderer, the ladder), the OpenOrbis samples, a licence-clean library, then the published technique - and use it instead of re-deriving it. Write new code only where nothing fits or the licence forbids it, from the documented method and never pasted (G7 clean-room note). Two implementations of one job must name why the second exists, or the second one goes",
+   "statement": "**Do not reproduce a method that already exists - reuse it** — this project has rebuilt things that were already there: a bespoke logger and an on-screen text renderer for every probe while the player already had `applog` and its own text drawing, and a uniform-binding answer the ES2 spec states",
+   "falsifier": "the same helper implemented twice in the tree"
+  },
+  {
+   "id": "R30",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "A question to the owner is allowed only when the answer is a **visual choice** - which look, which palette, sharper or smoother, this layout or that. Anything technical (an API, a driver refusal, a format, a build error, a timing method, a structure, a default value) is resolved from this manifest, `AGENTS.md`, `PIGLET-NOTES.md`, `APPENDIX-LOGS.md`, `ROUND-NOTES.md`, the ES2/EGL spec, the OpenOrbis samples, then other PS4 homebrew - and the answer is written back into the manifest in the same turn, so the next session finds it. If a technical answer genuinely is not in any of those, the fallback is a decision recorded with its reason, not a question. Asking the owner to choose a technical option is a defect in the round. A **console run is not a question**: it is a step that needs their hands, and the reply gives it with the file, MD5, install route, what to do and which lines to send back",
+   "statement": "**Ask the owner only about how it should look; every technical question is answered here and work continues** — the owner's instruction, 2026-11-24: \"the only thing that should be asked is aesthetic questions... if it has to do with programming or coding in any way... refer to the Manifest to find the solution instead of asking the user\"",
+   "falsifier": "a technical question escalated to the owner that the manifest already answers"
+  },
+  {
+   "id": "R31",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "`volatile` orders nothing in C11: it does not make a read-modify-write atomic, and it does not stop the compiler from moving the flag across the buffer it guards, so a stale or reordered read can start a track the loop has already stopped, or leave the thread playing one the loop believes is over. Fix it in its own round, with one owner per flag: the loop asks for the change and the audio thread performs it under a `pthread_mutex_t`, or the thread is handed a generation number when a track starts and stops when the generation moves. The pattern is already in this codebase - `src/applog.c` holds `s_mtx` across every write. `make check` cannot see this race (the host tests pass either way), so the fix is proven by a console run that stalls and repeats a track, read from the audio summary in the log",
+   "statement": "**Two threads write the playback flags with no lock** - `s_playing`, `s_quit` and `s_track_finished` are declared `volatile int` in `src/main.c:157-159`; the SDL loop sets them, and `audio_thread` also writes them at the end of a track (`s_playing = 0; s_track_finished = 1;`, `src/main.c:1883-1885`), while `src/main.c` holds no `pthread_mutex` anywhere, so `volatile` is being asked to do a synchronization primitive's job",
+   "falsifier": "an observed data race on the playback flags, or a fix that removes the unlocked write"
+  },
+  {
+   "id": "R32",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "The relay forbids editing project files, so a named round is the only route into `src/`; two agents stalled for hours on that wording. The owner names the round and its file list, only those files may be written, the round appends its file list, its before/after numbers and how to revert, and dated backups stay inside `PS4Dev/` under `_scratch/backups/` with their hashes in the relay. A round with no file list is not authorised.",
+   "statement": "**Owner-authorised rounds are the only way source is written**",
+   "falsifier": "a source change landed outside an authorised round"
+  },
+  {
+   "id": "R33",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "R32 was adopted, recorded in the build log, and still absent from the rule table and `../RULES.index` - so the rule that governs every source edit was invisible to the file a session reads. Every rule has one id in exactly two places: its row here or its G entry in `AGENTS.md`, and its record in `../RULES.index`. A rule named only in a log, a chat or another file is a note, not a rule.",
+   "statement": "**One namespace: a rule is in the table and in the index, or it does not exist**",
+   "falsifier": "a rule present in the table and missing from the index, or the reverse"
+  },
+  {
+   "id": "R34",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "The table mixes measured facts, procedure and taste, so a reader cannot tell which rows could be wrong. Every rule states a status from one closed set - measured, researched only, owner-stated, assumed, procedural, contested - and anything measured also states what observation would prove it wrong. Rows that are neither owner-stated nor measured say so in the row itself. Counted in `MANIFEST.md` and `RULES.index`, 2026-11-24: 44 of the then-48 rules carried no falsifier.",
+   "statement": "**A rule without a falsifier is a preference**",
+   "falsifier": "a measured rule that states no observation that would contradict it",
+   "verified_on": "not applicable - procedure"
+  },
+  {
+   "id": "R35",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "The read order began at `files/STATUS.html`, which does not exist - the file is `../STATUS.html` - and the checker's MD5 test skips itself when the package archive is absent while still counting as passed. Paths quoted here and in `AGENTS.md` resolve against the layout `README-KIT.txt` declares, and the checker verifies every backticked path that looks like a file. A check that cannot run reports `skipped`, never `ok`.",
+   "statement": "**Every pointer resolves, and a skipped check is never a pass**",
+   "falsifier": "a dead backticked path that the checker reports as ok"
+  },
+  {
+   "id": "R36",
+   "kind": "R",
+   "status": "assumed",
+   "evidence": "The console is a PS4 Pro on 12.52 with GoldHEN v2.4b18.14, and today that lives only in prose. A measured rule carries the firmware and loader version beside the number, so a reader on another version re-verifies instead of inheriting a figure that may not apply. Unmeasured rules say `unmeasured` rather than borrowing a number from a neighbouring row.",
+   "statement": "**Every measured rule names the machine it was measured on**",
+   "falsifier": "a figure quoted on another firmware without re-measurement",
+   "verified_on": "PS4 Pro 12.52, GoldHEN v2.4b18.14"
+  },
+  {
+   "id": "R37",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "Two agents share one laptop and one tree. A claim confirmed by its own author is not a verification, so each side checks the tree directly - hash, mtime, rule count, the checker's own output - and records its own result with the hash it saw. A peer's summary is a lead to check, not a fact. Disagreement is settled by a hash, never by repetition or seniority; where two readings persist, both are recorded and the test that separates them is named.",
+   "statement": "**Each agent verifies independently, and no agent's report is evidence for the other**",
+   "falsifier": "a relay claim accepted with no independent hash from the reader"
+  },
+  {
+   "id": "R38",
+   "kind": "R",
+   "status": "measured",
+   "evidence": "A backticked path resolves in the working tree, in the publish output (`tools/publish-docs.py` generates `docs/README.md` and `CHECKSUMS.txt`), or on the console under `/data/`. It is dead only when it resolves in none of the three. R35 runs in the first two and names the namespace it resolved in, so a generated page is not a broken pointer and a green markdown link check is not coverage of a backticked span.",
+   "statement": "**A pointer resolves in one of three declared namespaces**",
+   "falsifier": "a backticked path called dead in one namespace while resolving in another, or a publisher-generated file counted as absent"
+  }
+ ]
+}
