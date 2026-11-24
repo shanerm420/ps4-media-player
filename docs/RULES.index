@@ -3,7 +3,7 @@
   "MANIFEST.md section 9",
   "AGENTS.md G-rules"
  ],
- "count": 40,
+ "count": 41,
  "rules": [
   {
    "id": "G1",
@@ -284,6 +284,13 @@
    "status": "procedural",
    "evidence": "A question to the owner is allowed only when the answer is a **visual choice** - which look, which palette, sharper or smoother, this layout or that. Anything technical (an API, a driver refusal, a format, a build error, a timing method, a structure, a default value) is resolved from this manifest, `AGENTS.md`, `PIGLET-NOTES.md`, `APPENDIX-LOGS.md`, `ROUND-NOTES.md`, the ES2/EGL spec, the OpenOrbis samples, then other PS4 homebrew - and the answer is written back into the manifest in the same turn, so the next session finds it. If a technical answer genuinely is not in any of those, the fallback is a decision recorded with its reason, not a question. Asking the owner to choose a technical option is a defect in the round. A **console run is not a question**: it is a step that needs their hands, and the reply gives it with the file, MD5, install route, what to do and which lines to send back",
    "statement": "**Ask the owner only about how it should look; every technical question is answered here and work continues** — the owner's instruction, 2026-11-24: \"the only thing that should be asked is aesthetic questions... if it has to do with programming or coding in any way... refer to the Manifest to find the solution instead of asking the user\""
+  },
+  {
+   "id": "R31",
+   "kind": "R",
+   "status": "procedural",
+   "evidence": "`volatile` orders nothing in C11: it does not make a read-modify-write atomic, and it does not stop the compiler from moving the flag across the buffer it guards, so a stale or reordered read can start a track the loop has already stopped, or leave the thread playing one the loop believes is over. Fix it in its own round, with one owner per flag: the loop asks for the change and the audio thread performs it under a `pthread_mutex_t`, or the thread is handed a generation number when a track starts and stops when the generation moves. The pattern is already in this codebase - `src/applog.c` holds `s_mtx` across every write. `make check` cannot see this race (the host tests pass either way), so the fix is proven by a console run that stalls and repeats a track, read from the audio summary in the log",
+   "statement": "**Two threads write the playback flags with no lock** - `s_playing`, `s_quit` and `s_track_finished` are declared `volatile int` in `src/main.c:157-159`; the SDL loop sets them, and `audio_thread` also writes them at the end of a track (`s_playing = 0; s_track_finished = 1;`, `src/main.c:1883-1885`), while `src/main.c` holds no `pthread_mutex` anywhere, so `volatile` is being asked to do a synchronization primitive's job"
   }
  ]
 }

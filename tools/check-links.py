@@ -25,8 +25,11 @@ def anchors(path):
     return {slug(t) for t in re.findall(r"^#{1,6} (.+)$", text, re.M)} | {"top"}
 
 
+# `_scratch/` holds throwaway push clones: a partial copy of the published tree,
+# so the links inside it resolve against files that were never copied. It is not
+# published and must not fail this check, the same way rule-index.py skips it.
 pages = [os.path.join(b, n) for b, _d, ns in os.walk(ROOT)
-         if os.sep + ".git" not in b
+         if os.sep + ".git" not in b and os.sep + "_scratch" not in b
          for n in ns if n.endswith((".md", ".html"))]
 bad = []
 for page in pages:

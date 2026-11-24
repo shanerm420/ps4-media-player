@@ -74,7 +74,7 @@ def step(name, what, cmd):
 
 step("Rules lint", "sections, rule ids, cross references, MD5s, ceilings",
      [sys.executable, "tools/check-manifest.py"])
-step("Rule index", "29 rules parsed, each status checked against its evidence",
+step("Rule index", "every rule parsed, each status checked against its evidence",
      [sys.executable, "tools/rule-index.py"])
 step("Checker self-test", "8 injected faults, each one must be caught",
      [sys.executable, "_scratch/linttest/mutate.py"])
@@ -94,15 +94,39 @@ def field(name):
     return m.group(1).strip() if m else ""
 
 
+def plain(text):
+    """The cards are plain HTML: markdown emphasis and code ticks would show as
+    literal asterisks and backticks, which reads as rubble rather than emphasis."""
+    return text.replace("**", "").replace("`", "")
+
+
 pl = newest(r"Ultimate-Media-Player-v(\d+)\.pkg$")
 gp = newest(r"GPU-.*BREW(\d+)\.pkg$")
 player = ("v%s — %s" % (pl[0], "`" + md5(pl[2]) + "`")) if pl else "none found"
 gpu = ("BREW%05d — %s" % (gp[0], "`" + md5(gp[2]) + "`")) if gp else "none found"
 
+# The register lives in APPENDIX-LOGS.md since 2026-11-24 (G9); reading it here
+# keeps the board showing the run the manifest actually predicted, instead of an
+# empty table that quietly says nothing.
 preds = []
-for m in re.finditer(r"^\| (P\d) \| (.+?) \| (.+?) \| (open|hit|missed) \|\s*$",
-                     man, re.M):
-    preds.append((m.group(1), m.group(2), m.group(4)))
+register = os.path.join(ROOT, "APPENDIX-LOGS.md")
+try:
+    reg = open(register, encoding="utf-8").read()
+except OSError:
+    reg = ""
+for m in re.finditer(r"^\| (P\d) \| (.+?) \| (.+?) \| (.+?) \|\s*$", reg, re.M):
+    verdict = m.group(4).lower()
+    # "void" is tested first: P2 reads "void, not a miss", and a void says the
+    # method was wrong, which is not the same verdict as the number missing.
+    if "void" in verdict:
+        state = "void"
+    elif "hit" in verdict:
+        state = "hit"
+    elif "miss" in verdict:
+        state = "missed"
+    else:
+        state = "open"
+    preds.append((m.group(1), m.group(2), state))
 preds.sort(key=lambda p: int(p[0][1:]))
 
 rules = []
@@ -119,12 +143,12 @@ for s in steps:
         if line.startswith("note  "):
             notes.append(line[6:].strip())
 
-waiting = os.path.join(FILES, "gpu-bloom98.log")
+# Taken from MANIFEST §2, which is the single answer to "what is next"; a
+# hardcoded run here went three rounds stale before anyone noticed.
 console_item = {
-    "title": "BREW%05d bloom differential run" % (gp[0] if gp else 98),
-    "body": "Install from Hdd [hdd:/data/pkg/], run ~2 minutes, pull "
-            "/data/gpu-bloom98.log over FTP 2121 and drop it in the chat.",
-    "done": os.path.exists(waiting),
+    "title": "The run MANIFEST \u00a72 asks for",
+    "body": (field("Next action") or field("Unblocked by") or "nothing queued")[:400],
+    "done": False,
 }
 
 ok_all = all(s["ok"] for s in steps)
@@ -150,7 +174,8 @@ for s in steps:
 
 pred_rows = "".join(
     '<tr><td class="mono">%s</td><td>%s</td><td>%s</td></tr>'
-    % (p[0], html.escape(p[1][:110]), pill({"open": "wait"}.get(p[2], "ok"), p[2]))
+    % (p[0], html.escape(plain(p[1])[:110]),
+       pill({"open": "wait", "void": "wait"}.get(p[2], "ok"), p[2]))
     for p in preds)
 
 note_html = "".join("<li>%s</li>" % html.escape(n) for n in notes) or "<li>none</li>"
@@ -232,15 +257,15 @@ page = (page
         .replace("__OVERALL__", pill("ok", "all host checks passing")
                  if ok_all else pill("bad", "a host check is failing"))
         .replace("__PLAYER__", html.escape(player))
-        .replace("__PLAYER_NOTE__", html.escape(field("Already run on the console")[:120] + "…"))
-        .replace("__GPU__", html.escape(gpu))
-        .replace("__GPU_NOTE__", html.escape(field("Built and not yet run")))
-        .replace("__QUESTION__", html.escape(field("Blocking question")))
-        .replace("__ACTION__", html.escape(field("Next action")))
+        .replace("__PLAYER_NOTE__", html.escape(plain(field("Already run on the console"))[:120] + "…"))
+        .replace("__GPU__", html.escape(plain(gpu)))
+        .replace("__GPU_NOTE__", html.escape(plain(field("Built and not yet run"))))
+        .replace("__QUESTION__", html.escape(plain(field("Blocking question"))))
+        .replace("__ACTION__", html.escape(plain(field("Next action"))))
         .replace("__ROWS__", "".join(rows))
         .replace("__WCOLOR__", PASS if console_item["done"] else AMBER)
         .replace("__WTITLE__", html.escape(console_item["title"]))
-        .replace("__WBODY__", html.escape(console_item["body"]))
+        .replace("__WBODY__", html.escape(plain(console_item["body"])))
         .replace("__WSTATE__", "done" if console_item["done"] else "waiting")
         .replace("__PREDS__", pred_rows)
         .replace("__NOTES__", note_html)
