@@ -23,4 +23,4 @@ if epoch and epoch.isdigit():
 else:
     d, t = DEFAULT
 
-print('-DBUILD_DATE="%s" -DBUILD_TIME="%s"' % (d, t))
+print("-DBUILD_DATE='\"%s\"' -DBUILD_TIME='\"%s\"'" % (d, t))
