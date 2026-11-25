@@ -20,7 +20,7 @@ log path to pull and in which mode, and the specific lines to send back. For a
 build step that means the command, the package name, the MD5 and the source hash.
 The test is simple: the owner should be able to act on the last paragraph without
 asking a follow-up question, and should know exactly what to look for. If the step
-is the owner's and it needs something they have not given yet, the three
+is the owner's and it needs something they have not given yet, the four
 unreported observations in [§2](02-current-focus.md) are the model for how to ask for it.
 
 **Owner-supplied information is folded in automatically (added 2026-11-23,
@@ -127,6 +127,15 @@ a time, each finished and logged before the next starts. The queued features kee
 their place after them, and nothing renders differently until Round 2 is
 approved.
 
+**Order from 2026-11-25.** The redesign charter (`REDESIGN-CHARTER-2026-11-25.md`)
+owns the sequence for the interface: phases M0–M6, carried with their statuses in
+[§3](03-roadmap.md). v124 is the first screen on the new design system and is built but
+unrun, so the immediate move is its console verdict, not a new screen. Rounds 1
+and 2 below are recorded as they stand; Round 3 (plans only) has not started and
+its place is inside that order. The visualizer overhaul is still gated on the
+owner's go-ahead for the first look port, and the surface design round in the
+working tree ([§2](02-current-focus.md)) is not that approval.
+
 ### Predictions register - moved to `APPENDIX-LOGS.md` (2026-11-24)
 
 The register, the rule that governs it and every row (BREW00098's P0-P5) now
@@ -135,11 +144,16 @@ G9: a prediction with the number that would falsify it is evidence, not a rule,
 and the manifest is at its size ceiling. Before a console run, write the new
 prediction there, and fill its `Result` column in the same turn the log is read.
 
-### Round 1 — v118, logging only — **built, awaiting the console run**
+### Round 1 — v118, logging only — **built, run as v119 on 2026-11-25**
 
-Built 2026-11-23, MD5 `349943cbd65ddb1580a9e47aec7de1b0`, source hashes in [§4](04-build-log.md).
-The console steps and what to look for are in the round report; v117 is the
-rollback. Nothing in Round 2 may start from assumptions about this log.
+Built 2026-11-23 (MD5 `349943cbd65ddb1580a9e47aec7de1b0`, source hashes in [§4](04-build-log.md));
+the same logging build went to the console as **v119** on 2026-11-25 at 02:41:26.
+The run was clean — no errors, 2,921 tracks, ladder 1→2→3 at 110.8 / 94.7 ms, floor
+21.39–21.56 ms — but the lines the round exists for, `video: SRC`, `video: RATE`
+and `pull_rounds`, **never appeared** (E10), so the video facts are still unknown
+and the `??????` byte/glyph lines are unanswered with them. v117 was the rollback;
+v124 is the current package. Nothing in Round 2 may start from assumptions about
+this log.
 
 - At video open print the codec or fourcc, the nominal frame rate, the duration,
   the bitrate and the resolution; add `pull_rounds` to the video summary beside
@@ -170,7 +184,7 @@ folder.
   uses **no player version number** — v118 stays the player's next number.
 - Keep the stage-numbered, fsynced logging that worked in v3: `sceKernelOpen` /
   `sceKernelWrite` / `sceKernelFsync`, one sink at `/data` and one at
-  `/data/ultimate-ps4-media-player/`, heartbeats and per-frame timings.
+  `/data/ultimate-ps4-player/`, heartbeats and per-frame timings.
 - **One look, the one with the biggest visible gain**, with the reason written
   down. 1920x1080 through Piglet on half-float render targets, a bloom chain
   (scene, bright-pass to a smaller target, blur, composite), ping-pong trails
@@ -184,7 +198,7 @@ folder.
 - Install, run, close and log-pull steps, ending with "look at this on the
   television and report it": resolution, smoothness, glow, anything wrong.
 
-### Round 3 — plans only, after Round 2 is logged
+### Round 3 — plans only, after Round 2 is logged — **not started**
 
 - **SDL and Piglet handover.** Options — the visualizer as a full-screen mode
   that hands the display over and back, the whole interface drawn through
@@ -199,9 +213,9 @@ folder.
   that steps a look down by itself, and what each step trades away.
 - Both written into `files/round7/README.md` and this manifest. **Nothing built.**
 
-The three items the owner still owes — what the sample showed on the television,
-the v117 header, the v116 verdict — are recorded as unreported in [§2](02-current-focus.md), and no
-round below depends on them.
+The items the owner still owes — the v124 home-screen verdict, what the Piglet
+sample showed on the television, the v117 header, the v116 look verdict — are
+recorded as unreported in [§2](02-current-focus.md), and no round below depends on them.
 
 ### After the three rounds
 
