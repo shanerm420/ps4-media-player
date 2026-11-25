@@ -10,5 +10,8 @@ of it in `HISTORY.md`. Nothing was deleted.
 Recent entries, one line each: BLOOM 1-4 built (BREW00095-098); the bloom chain
 compiles then dies at the first frame; BREW00097 measures submission, not GPU cost;
 a wrong uniform type breaks the blur; Piglet confirmed on 12.52; R32 adopted.
+2026-11-25: v119 built and run (no errors, floor 21.4 ms, no `video: SRC` line);
+the redesign charter written; v124 built on the design system with the home
+screen rebuilt; release `v1.0.0` published.
 
 [Manifest index](README.md) · [Back to the index](../README.md)
