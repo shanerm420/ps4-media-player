@@ -19,16 +19,17 @@ knowledge in [§9](09-ps4-knowledge-base.md); this block is only ever the presen
 | Next action | **Install and run v124 on the console** — `files/Ultimate-Media-Player-v124.pkg`, MD5 `9609b3b3711cf6cf84cf94f3bb432b3f`. The home screen is the only screen rebuilt so far; it is the reference for the rest. Pull `app.log` and read the menu pass: `paint` / `flush` / `pres` on the menu must not have moved the present-path floor (E7/E8 in `REDESIGN-CHARTER-2026-11-25.md`), and the screen verdict decides whether this is finally the level before the other five screens are converted |
 | Reflection (R26/R27) | Before that run: **already recorded** — the 16.7 ms display step, the uniform binding, vsync, packaging, logs, the module load, the memory class, the blob set ([§7](07-environment.md) settled list). **Genuinely new** — the file's codec, rate, duration and bitrate, and whether the `??????` names arrive mangled or the font lacks glyphs. Both need this console and no source has them |
 | Last console-verified | **2026-11-25, v119** (player, run 02:41:26); 2026-11-24, the BREW00102 log (GPU) |
-| Published | `shanerm420/ps4-media-player` — source, docs, `AGENTS.md`, tools and notes on `main` at `b445e68` (merges `295f9db`, then `fa4f556`, then PR #3); release `v1.0.0` **published** 2026-11-24T23:48:23Z with asset `IV0000-BREM00001_00-ULTIMATEMEDIA000.pkg`, 6,619,136 bytes, MD5 `fb2189115fdb683cd52b3148d77562c2`, SHA-256 `482d214c92c66784107675eed09b759f88c7a97ef7e8f294766e4dcc80530f59`, both read from the asset and confirmed against the archived copy of the same bytes; CI `links` green on `b445e68`. **Provenance:** tag `V1.0.0` (`78ac0bb`, 21 Nov) is the build source of the shipped asset; tag `v1.0.0` points at the docs merge and is the release's tag, so its source zip is not the source of that binary. `main` also carries the unverified A3/A3b renderer change, which this tree does not — the two sources differ |
+| Published | `shanerm420/ps4-media-player` — source, docs, `AGENTS.md`, tools and notes on `main` at `b445e68` (merges `295f9db`, then `fa4f556`, then PR #3), with this sync on top; release `v1.0.0` **published** 2026-11-24T23:48:23Z with asset `IV0000-BREM00001_00-ULTIMATEMEDIA000.pkg`, 6,619,136 bytes, MD5 `fb2189115fdb683cd52b3148d77562c2`, SHA-256 `482d214c92c66784107675eed09b759f88c7a97ef7e8f294766e4dcc80530f59`, both read from the asset and confirmed against the archived copy of the same bytes; CI `links` green on `b445e68`. **Provenance:** tag `V1.0.0` (`78ac0bb`, 21 Nov) is the build source of the shipped asset; tag `v1.0.0` points at the docs merge and is the release's tag, so its source zip is not the source of that binary. `main` also carries the unverified A3/A3b renderer change, which this tree does not — the two sources differ |
 
 **Focus: the interface is being rebuilt on a design system, and v124 is the first
-screen on it.** The design-system decision of 2026-11-25 ([§5](05-decisions.md)) replaced the
-per-screen pass that produced v121–v123: one type ramp, one spacing scale, four
-corner radii and one slab material, with structure carried by type size, air,
-shadow and a single accent instead of boxes. v124 contains the system plus the
-home screen rebuilt on it, and is **built, not run** — the console verdict on
-that one screen decides whether the same system converts the other five. The
-full phase order is `REDESIGN-CHARTER-2026-11-25.md` §7, carried in [§3](03-roadmap.md).
+screen on it.** The design-system pass of 2026-11-25, written up as
+`REDESIGN-CHARTER-2026-11-25.md`, replaced the per-screen refinements that
+produced v121–v123: one type ramp, one spacing scale, four corner radii and one
+slab material, with structure carried by type size, air, shadow and a single
+accent instead of boxes. v124 contains the system plus the home screen rebuilt on
+it, and is **built, not run** — the console verdict on that one screen decides
+whether the same system converts the other five. The phase order is the charter's
+§7, carried in [§3](03-roadmap.md).
 
 **The GPU is reachable. Piglet ES2 runs on this console.** The firmware's own
 `libScePigletv2VSH.sprx` and `libScePrecompiledShaders.sprx` load
