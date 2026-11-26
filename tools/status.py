@@ -23,17 +23,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FILES = os.path.dirname(ROOT)
 OUT = os.path.join(FILES, "STATUS.html")
 
-# This runs at the kit root, where MANIFEST.md and AGENTS.md sit and where the
-# files/ archive lives. The published tree splits those documents into docs/, so
-# there is nothing here to summarise: say so, write nothing, and stay out of the
-# way instead of raising a traceback or dropping a board beside the repository.
-_missing = [n for n in ("MANIFEST.md", "AGENTS.md")
-            if not os.path.exists(os.path.join(ROOT, n))]
-if _missing:
-    print("not runnable here: %s not found in %s" % (", ".join(_missing), ROOT))
-    print("status.py writes %s; run it from the kit root, not the published copy." % OUT)
-    sys.exit(2)
-
 
 def run(cmd, cwd=ROOT, timeout=300):
     t0 = time.time()

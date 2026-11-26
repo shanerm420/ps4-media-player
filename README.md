@@ -31,6 +31,32 @@ console must be jailbroken with HEN/GoldHEN running. Install steps are under
 [Install on the console](#install-on-the-console); to build it yourself, see
 [Quick start](#quick-start).
 
+
+A native PS4 (OpenOrbis) media player. MP3 and MP4/MOV both play: audio goes
+decode → resample → 10-band EQ → volume → soft limiter → `sceAudioOut`, video
+through the firmware's AvPlayer with the same audio chain, an SDL2 UI and a PKG
+build that installs as **Ultimate PS4 Media Player**.
+
+> **Status:** builds, links and packages cleanly; the host-side audio and
+> subtitle code passes 27 assertions and every screen is rendered at 720p,
+> 1080p and 1440p in `preview/`. It runs on a jailbroken console (HEN/GoldHEN,
+> firmware 12.52): v117 is the last build run there, and v118 adds video metadata
+> logging. Playback timing, color and the pad mapping are still being measured.
+> Built against OpenOrbis toolchain v0.5.4 on Ubuntu 24.04.
+>
+> The working rules, the measured facts and the current plan live in
+> [AGENTS.md](AGENTS.md) - read that before changing anything.
+
+## Download
+
+The build for the console is attached to
+**[Releases](https://github.com/shanerm420/ps4-media-player/releases)** when a
+release is published:
+`IV0000-BREWMEDI1_00-ULTIMATEMEDIA000.pkg` (6.6 MB). It is fake-signed, so the
+console must be jailbroken with HEN/GoldHEN running. Install steps are under
+[Install on the console](#install-on-the-console); to build it yourself, see
+[Quick start](#quick-start).
+
 ## What it does
 
 * **Plays MP3** with a 10-band equalizer, preamp, volume in dB and a soft
