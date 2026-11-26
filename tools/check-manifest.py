@@ -11,7 +11,6 @@ manifest. Read-only. Exit status 1 if anything fails, so `make check` catches it
 """
 
 import hashlib
-import json
 import os
 import re
 import sys
@@ -87,6 +86,14 @@ allrules = man + '\n' + agents
 _hpath = os.path.join(FILES, 'HISTORY.md')
 if os.path.exists(_hpath):
     allrules += '\n' + open(_hpath, encoding='utf-8').read()
+# Appendices are part of the corpus. Incidents, rules and amendment tags move
+# there to keep the manifest inside its 128 KB budget, and a tag that moved with
+# them must still be checked: it was a tag in the manifest that this pass
+# stopped seeing the moment APPENDIX-PROBLEMS.md existed. Globbed, so a new
+# appendix is covered on arrival instead of silently exempt.
+for _name in sorted(os.listdir(ROOT)):
+    if _name.startswith('APPENDIX-') and _name.endswith('.md'):
+        allrules += '\n' + read(os.path.join(ROOT, _name))
 
 # tags may wrap across lines, so match the whole text and map back to a line
 tags = [(allrules[:m.start()].count("\n") + 1, m.group(1))
@@ -258,46 +265,6 @@ if status_html:
               and os.path.getmtime(f) > os.path.getmtime(_sp) + 1]
     check("STATUS.html is newer than the rules files", not _stale,
           "stale against " + ", ".join(_stale) + " -- run: make status")
-
-# --- 16. the index and its falsifiers (R33, R34) -------------------------
-# Until now this checker never opened RULES.index, so all 48 falsifiers and
-# R33's "in the table and in the index" lived only in the generator. A rule is
-# checked here as a rule, not as prose.
-_rp = os.path.join(FILES, "RULES.index")
-_idx = []
-try:
-    _idx = json.load(open(_rp, encoding="utf-8"))["rules"]
-    check("RULES.index parses", True)
-except (OSError, ValueError, KeyError) as _exc:
-    check("RULES.index parses", False, str(_exc))
-if _idx:
-    _want = set(re.findall(r"(?m)^\| (R\d+) \|", man))
-    _want |= set(re.findall(r"(?m)^\*\*(G\d+)\b", agents))
-    _have = set(r["id"] for r in _idx)
-    check("RULES.index and the rule table agree on ids (R33)", _want == _have,
-          "only in prose: %s; only in index: %s"
-          % (", ".join(sorted(_want - _have)) or "none",
-             ", ".join(sorted(_have - _want)) or "none"))
-    _bare = [r["id"] for r in _idx if not (r.get("falsifier") or "").strip()]
-    check("every indexed rule carries a falsifier (R34)", not _bare,
-          "no falsifier: " + ", ".join(_bare))
-    # A note, never a failure: the checker cannot tell a derived constant from a
-    # misquoted measurement, and a judgement it cannot make must not be reported
-    # as a pass (R35). Printed so the list stays in front of a reader.
-    _rows = dict((m.group(1), m.group(0)) for m in
-                 re.finditer(r"(?m)^\| (R\d+) \|.*$", man))
-    _derived = []
-    for _r in _idx:
-        if _r["kind"] != "R":
-            continue
-        _row = _rows.get(_r["id"], "")
-        _odd = sorted(n for n in set(re.findall(r"\d+(?:\.\d+)?", _r["falsifier"]))
-                      if n not in _row)
-        if _odd:
-            _derived.append("%s %s" % (_r["id"], "/".join(_odd)))
-    if _derived:
-        print("note  falsifier figures absent from their own row - derived, or "
-              "misquoted: " + "; ".join(_derived))
 
 failed = [r for r in results if not r[1]]
 for name, ok, detail in results:

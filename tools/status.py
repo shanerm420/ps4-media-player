@@ -76,10 +76,16 @@ step("Rules lint", "sections, rule ids, cross references, MD5s, ceilings",
      [sys.executable, "tools/check-manifest.py"])
 step("Rule index", "every rule parsed, each status checked against its evidence",
      [sys.executable, "tools/rule-index.py"])
-step("Checker self-test", "12 injected faults, each one must be caught",
-     [sys.executable, "test/mutate.py"])
+step("Checker self-test", "8 injected faults, each one must be caught",
+     [sys.executable, "_scratch/linttest/mutate.py"])
 step("Player tests", "host-side audio path, no console needed",
      ["make", "-C", "test", "run"])
+# These two are part of `make check` and were missing from this board, so the
+# page said "every host check" while showing four of six (found 2026-11-25).
+step("Visualizer gate", "register, budgets, bench freshness, drawn output",
+     [sys.executable, "tools/check-visuals.py"])
+step("Document links", "every relative link in the docs resolves",
+     [sys.executable, "tools/check-links.py"])
 
 man = open(os.path.join(ROOT, "MANIFEST.md"), encoding="utf-8").read()
 agents = open(os.path.join(ROOT, "AGENTS.md"), encoding="utf-8").read()

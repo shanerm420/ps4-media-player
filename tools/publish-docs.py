@@ -73,6 +73,16 @@ def main():
         body = body.split("\n", 1)[1] if "\n" in body else ""
         sections.append((num, title, body.strip()))
 
+    # A section's filename comes from its own title, never from a literal: the
+    # manifest was restructured (M-labels added) and the hard-coded
+    # `02-current-focus.md` / `09-ps4-knowledge-base.md` links then pointed at
+    # nothing, which is what made the link check fail. Every reference below
+    # asks `sec()` instead.
+    by_num = {num: sec_name(num, title) for num, title, _b in sections}
+
+    def sec(num):
+        return by_num.get(int(num), "%02d-missing.md" % int(num))
+
     if os.path.isdir(OUT):
         shutil.rmtree(OUT)
     os.makedirs(OUT)
@@ -95,7 +105,7 @@ def main():
                     "**Status:** %s  " % status.replace("**", ""),
                     "**Evidence:** %s" % evidence,
                     "",
-                    "Full row: [manifest §9](../manifest/09-ps4-knowledge-base.md). ",
+                    "Full row: [manifest §9](../manifest/%s). " % sec(9),
                     "Part of the [rule index](README.md)."]
         else:
             full = gtitle.get(rid, r["statement"])
@@ -128,6 +138,12 @@ def main():
                     for n, t, _b in amendments)
           + "\n[Back to the rule index](../rules/README.md).\n")
 
+    # `HISTORY.md` lives one level up, so its pointer into the project folder is
+    # right for the working copy and wrong once the page is published at
+    # `docs/HISTORY.md`. The appendix is published at the root, so the link is
+    # rewritten to reach it there.
+    hist = hist.replace("](ps4-media-player/APPENDIX-HISTORY-2026-11-24.md)",
+                        "](../APPENDIX-HISTORY-2026-11-24.md)")
     write("docs/HISTORY.md",
           "# Build history\n\nThe dated log: what was built, what ran on the console,\n"
           "what the log said. Read it when you need to know *why* a rule exists.\n\n"
@@ -161,6 +177,9 @@ def main():
             m.group(1),
             sec_name(*next((s[:2] for s in sections if s[0] == int(m.group(1))),
                            (m.group(1), "missing")))), body)
+        # A section page lives in `docs/manifest/`, one level below the project
+        # root its body was written for: `docs/X.md` has to become `../X.md`.
+        body = body.replace("](docs/", "](../")
         write("docs/manifest/" + sec_name(num, title),
               "# %d. %s\n\n*Part %d of 12 of the manifest — previous: %s · next: %s*\n\n%s\n\n"
               "[Manifest index](README.md) · [Back to the index](../README.md)\n"
@@ -182,11 +201,11 @@ def main():
           "## If you are an AI agent, read in this order\n\n"
           "1. [AGENTS.md](AGENTS.md) — the rules. Hard rules, workspace rules,\n"
           "   measurement rules, and G1–G10.\n"
-          "2. [Manifest §2](docs/manifest/02-current-focus.md) — where the project is\n"
+          "2. [Manifest §2](docs/manifest/%s) — where the project is\n"
           "   right now: latest builds, the blocking question, the next action.\n"
           "3. [Rule index](docs/rules/README.md) — every rule with its status and the\n"
           "   evidence behind it. `measured` means a console log proves it.\n"
-          "4. [Manifest §9](docs/manifest/09-ps4-knowledge-base.md) — the knowledge\n"
+          "4. [Manifest §9](docs/manifest/%s) — the knowledge\n"
           "   base: what this console does, measured on this console.\n"
           "5. [History](docs/HISTORY.md) — why each rule exists.\n\n"
           "Nothing later in that order overrides anything earlier.\n\n"
@@ -209,7 +228,7 @@ def main():
           "says so; `assumed` means nobody has checked yet. Numbers without a status are\n"
           "a bug, and the checkers fail on them.\n\n"
           "Source code lives in the project repository alongside this documentation;\n"
-          "packages are kept out of git history deliberately.\n")
+          "packages are kept out of git history deliberately.\n" % (sec(2), sec(9)))
 
     _idx = read(os.path.join(OUT, "docs/README.md"))
     for _a, _b in (("](docs/manifest/", "](manifest/"),
@@ -230,13 +249,13 @@ def main():
 
     top = ("# Working rules — PS4 media player\n\n"
            "**Read order:** [docs/README.md](docs/README.md) → this file (the rules) → "
-           "[manifest §2](docs/manifest/02-current-focus.md) → "
+           "[manifest §2](docs/manifest/%s) → "
            "[rule index](docs/rules/README.md) → "
-           "[manifest §9](docs/manifest/09-ps4-knowledge-base.md) → "
+           "[manifest §9](docs/manifest/%s) → "
            "[history](docs/HISTORY.md).\n\n"
            "This is the published copy of the rules file. It is regenerated from the\n"
            "project's canonical `AGENTS.md` by `tools/publish-docs.py`; §-references\n"
-           "point into the published manifest.\n\n---\n\n")
+           "point into the published manifest.\n\n---\n\n" % (sec(2), sec(9)))
     agents_body = re.sub(r"^\*\*G(\d+) — (.+?)\*\*(.*)$",
                          lambda m: "### G%s — %s\n\n%s" % (
                              m.group(1), m.group(2).rstrip("."), m.group(3).strip()),
@@ -252,10 +271,21 @@ def main():
 
     # Notes and appendices the rules point at by name. Published at the root,
     # next to AGENTS.md, so a name written in a rule is a real page on GitHub.
-    for _name in ("PIGLET-NOTES.md", "ROUND-NOTES.md", "APPENDIX-LOGS.md"):
+    for _name in ("PIGLET-NOTES.md", "ROUND-NOTES.md", "APPENDIX-LOGS.md",
+                  "APPENDIX-HISTORY-2026-11-24.md"):
         _src = os.path.join(ROOT, _name)
         if os.path.exists(_src):
             write(_name, read(_src))
+
+    # Pages named by a rule but hand-written rather than generated: the open
+    # problem list (P1, cited from AGENTS.md) and the manifest's appendix notes
+    # (N1-N5, cited from manifest §12). They carry no relative links of their
+    # own, so publishing them as-is is safe; leaving them out is what put a
+    # dangling link in AGENTS.md and in the §12 page.
+    for _name in ("APPENDIX-STATE.md", "PLAN-AND-OPEN-PROBLEMS.md"):
+        _src = os.path.join(ROOT, "docs", _name)
+        if os.path.exists(_src):
+            write("docs/" + _name, read(_src))
 
     write(".github/workflows/docs.yml", WORKFLOW)
 

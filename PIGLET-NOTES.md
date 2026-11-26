@@ -42,9 +42,9 @@ Status: `researched only` here until this project measures it per rule R15/R24.
 
 ## Memory
 
-- An app packaged as `CATEGORY gde` with Piglet's auth info gets about **768 MiB
-  of direct memory and 255 MiB of flexible memory**, not the gigabytes a game
-  gets. Textures and render targets come out of flexible memory.
+- An app packaged as `CATEGORY gde` with Piglet's auth info gets about **768 MiB of direct memory and 255 MiB of flexible memory**, not the
+gigabytes a game gets - the mini-app default, where a `gd` package on a base PS4
+  measures 4608 MiB. Textures and render targets come out of flexible memory.
 - The media player's own log reports a 4,608 MB direct pool, which cannot both
   be true of the same process class. Measure before trusting either number in
   the memory budget (rule G1).

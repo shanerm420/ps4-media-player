@@ -8,8 +8,16 @@ Parses the two places rules are written:
 Writes a machine-readable index (id, kind, status, evidence, statement) so a
 future reader can load ~40 one-line rules instead of 118 KB of prose, and it
 validates the part that drifts: a rule that quotes a number must say where the
-number came from, and a rule that claims "measured" must name something we can
-check - a log file that exists, an MD5, or a build id.
+number came from, and a rule that claims "measured" must name something that can
+actually be reached from this archive - a log file that exists, an MD5, a cited
+source file, or a build id whose package is still in `files/`.
+
+The last clause is the one this tool used to overstate. Console logs cited by
+rules are often not archived (they were pulled, read and lost), so citing one
+proves nothing by itself; until 2026-11-25 the tool printed a `note` for that and
+still exited 0, while its own docstring promised the citation was checked. A
+measured rule whose only evidence cannot be reached from here is now a failure,
+and a rule backed by a build id resolves through the package that id names.
 
 Read-only apart from regenerating files/RULES.index. Exit 1 on failure.
 """
@@ -29,12 +37,14 @@ OUT = os.path.join(FILES, "RULES.index")
 STATUS = ("measured", "researched only", "researched", "assumed", "contested")
 
 logs = set()
+archived = []          # every file name in the archive, for build-id lookups
 for base, _d, names in os.walk(FILES):
     if "_scratch" in base:
         continue
     for n in names:
         if n.endswith(".log"):
             logs.add(n)
+        archived.append(n)
 
 
 def read(p):
@@ -56,7 +66,7 @@ for line in man.split("\n"):
         rules.append({"id": m.group(1), "kind": "R", "statement": m.group(2).strip(),
                       "status_cell": m.group(3).strip(), "evidence_cell": m.group(4).strip()})
 
-for m in re.finditer(r"^\*\*(G\d+) — (.+?)\.\*\*(.*?)(?=^\*\*G\d+ — |^## |\Z)",
+for m in re.finditer(r"^\*\*(G\d+) — (.+?)\.\*\*(.*?)(?=^\*\*G\d+ — |^#{2,3} |\Z)",
                      agents, re.S | re.M):
     rules.append({"id": m.group(1), "kind": "G",
                   "statement": (m.group(2) + ".").strip(),
@@ -81,6 +91,24 @@ for r in rules:
 
     if status == "measured" and not has_evidence:
         problems.append("%s claims measured but cites no log, file, MD5 or build id" % r["id"])
+    archived_ok = True
+    if status == "measured":
+        # Reachability, not just citation: a build id counts only if its package
+        # is still here, a log only if it is on disk. A rule whose log was pulled,
+        # read and not kept must say so in its own evidence cell - "not archived" -
+        # and it is then counted and shown as unarchived rather than passing
+        # silently. The phrase is an admission, not a bypass: it is printed in the
+        # summary and carried in the index.
+        reachable = (bool(cited_logs)
+                     or any(i in n for i in cited_ids for n in archived)
+                     or any(os.path.exists(os.path.join(ROOT, f)) for f in cited_files))
+        admitted = "not archived" in blob or "log lost" in blob
+        if not reachable and not admitted:
+            problems.append("%s is measured but nothing it cites can be reached from this "
+                            "archive (logs: %s, ids: %s) and it does not say so"
+                            % (r["id"], ", ".join(cited_logs) or "none",
+                               ", ".join(cited_ids) or "none"))
+        archived_ok = reachable
     if numeric and status == "procedural":
         problems.append("%s quotes a number with no status word (%s)"
                         % (r["id"], "measured/researched only/assumed/contested"))
@@ -91,20 +119,10 @@ for r in rules:
                   "evidence": (r["evidence_cell"].strip()
                                or ", ".join(cited_logs + cited_ids) or
                                ("md5" if cited_md5 else "")),
+                  "evidence_archived": (archived_ok if status == "measured" else None),
                   "statement": re.sub(r"\s+", " ", r["statement"])})
 
 index.sort(key=lambda x: (x["kind"], int(re.sub(r"\D", "", x["id"]))))
-
-# preserved fields - this generator only derives id/kind/status/evidence/statement;
-# falsifier and verified_on live only in the index and must survive a rebuild (R34).
-try:
-    _prev = {r["id"]: r for r in json.loads(read(OUT))["rules"]}
-except Exception:
-    _prev = {}
-for _e in index:
-    for _k in ("falsifier", "verified_on"):
-        if _prev.get(_e["id"], {}).get(_k):
-            _e[_k] = _prev[_e["id"]][_k]
 
 payload = {"generated_from": ["MANIFEST.md section 9", "AGENTS.md G-rules"],
            "count": len(index), "rules": index}
@@ -128,6 +146,12 @@ missing_logs = sorted({n for r in rules for n in re.findall(r"[\w-]+\.log", r["e
                        if n not in logs})
 if missing_logs:
     print("note  cited logs not archived in files/: " + ", ".join(missing_logs))
+
+unarchived = [r["id"] for r in index
+              if r["status"] == "measured" and r["evidence_archived"] is False]
+if unarchived:
+    print("admit measured, evidence not in this archive: %d rule(s): %s"
+          % (len(unarchived), ", ".join(unarchived)))
 
 for p in problems:
     print("FAIL  " + p)

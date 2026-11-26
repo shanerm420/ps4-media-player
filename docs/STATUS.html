@@ -33,37 +33,50 @@ ul { margin:0; padding-left:18px; color:#c4ced8 }
 .big { font-size:15px; margin-top:10px }
 </style></head><body><div class="wrap">
 <h1>Project status — PS4 media player</h1>
-<div class="sub">Generated 2026-11-24 08:21 from the files themselves, by <span class="mono">tools/status.py</span>. Every check below runs on this machine; the console is listed separately because it cannot be reached from here.<br>Read order: this board, then MANIFEST §2, then AGENTS, then MANIFEST §9, then HISTORY. Nothing later overrides anything earlier.</div>
-<div class="big"><span class="pill" style="background:#2ecc71">all host checks passing</span></div>
+<div class="sub">Generated 2026-11-26 00:35 from the files themselves, by <span class="mono">tools/status.py</span>. Every check below runs on this machine; the console is listed separately because it cannot be reached from here.<br>Read order: this board, then MANIFEST §2, then AGENTS, then MANIFEST §9, then HISTORY. Nothing later overrides anything earlier.</div>
+<div class="big"><span class="pill" style="background:#e74c3c">a host check is failing</span></div>
 
 <h2>Where we are</h2>
 <div class="cards">
   <div class="card"><div class="k">Latest player build</div><div class="v mono">none found</div>
     <div class="what">Piglet sample v3 (GPU confirmed), BREW00094 catalogue (82 blobs), BREW00095 (502 at first frame), BREW00096 (85–100 fps,…</div></div>
   <div class="card"><div class="k">Latest GPU package</div><div class="v mono">none found</div>
-    <div class="what">v118; BREW00103</div></div>
-  <div class="card"><div class="k">Blocking question</div><div class="v">None left for the bloom proof of concept. It is answered to decision grade: one chain is under half a millisecond by the CPU bound, so a 6-pass chain is at most ~3 ms of a 16.7 ms frame - affordable, whatever the exact figure. What is still open is the *player* side: the video path and the filename logging (v118)</div></div>
-  <div class="card"><div class="k">Next action</div><div class="v">run v118 (files/Ultimate-Media-Player-v118.pkg, MD5 349943cbd65ddb1580a9e47aec7de1b0) and pull app.log: the video: SRC / video: RATE / pull_rounds lines are the only way to settle the 16 fps question</div></div>
+    <div class="what">v144, v143, v142, v141 and v140 (v138 ran 2026-11-25 23:09:05); BREW00103</div></div>
+  <div class="card"><div class="k">Blocking question</div><div class="v">Has any visualizer ever been seen? Nothing in the record proves it: the canvas was drawn and never uploaded, and every host render of a look was the music screen. From v142 the texture is created and the host shows all eighteen looks at all three steps. What is left is the console: the home frame (flush 133 ms → step 2), the quick menu, and the first sight of a look on a television</div></div>
+  <div class="card"><div class="k">Next action</div><div class="v">Install and run v144 — files/Ultimate-Media-Player-v144.pkg, MD5 2c7a3a6f070c53d9ce47555ac2670795; sheet docs/CONSOLE-TRIP-2026-11-25.md. Pull app.log: it must name v1.44-8c6bccde0f11 and print the compat: block (avplayer module handle=N, GetVideoDataEx=yes, four rc= lines), plus screen: home, quality step 1 -&gt; 2 and a picture in the music screen&#x27;s box</div></div>
 </div>
 
 <h2>Checks</h2>
-<table><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Rules lint</b><div class="what">sections, rule ids, cross references, MD5s, ceilings</div></td><td class="t">0.4s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Rule index</b><div class="what">every rule parsed, each status checked against its evidence</div></td><td class="t">0.2s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Checker self-test</b><div class="what">12 injected faults, each one must be caught</div></td><td class="t">7.2s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Player tests</b><div class="what">host-side audio path, no console needed</div></td><td class="t">0.1s</td></tr></table>
+<table><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Rules lint</b><div class="what">sections, rule ids, cross references, MD5s, ceilings</div></td><td class="t">0.6s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Rule index</b><div class="what">every rule parsed, each status checked against its evidence</div></td><td class="t">0.2s</td></tr><tr><td class="dot" style="color:#e74c3c">●</td><td><b>Checker self-test</b><div class="what">8 injected faults, each one must be caught</div><pre>/usr/bin/python3: can&#x27;t open file &#x27;/home/MX-Linux-2000/Desktop/PS4Dev/_unpacked/Shanerm420-PS4-Media-Player/ps4-media-player/_scratch/linttest/mutate.py&#x27;: [Errno 2] No such file or directory</pre></td><td class="t">0.1s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Player tests</b><div class="what">host-side audio path, no console needed</div></td><td class="t">0.1s</td></tr><tr><td class="dot" style="color:#e74c3c">●</td><td><b>Visualizer gate</b><div class="what">register, budgets, bench freshness, drawn output</div><pre>  SPECTRUM render is missing: ../ultimate-ps4-player/design/review3/full/00-spectrum.png
+FAIL  WAVEFORM render is missing: ../ultimate-ps4-player/design/review3/full/01-waveform.png
+FAIL  RADIAL render is missing: ../ultimate-ps4-player/design/review3/full/02-radial.png
+FAIL  PULSE render is missing: ../ultimate-ps4-player/design/review3/full/03-pulse.png
+FAIL  MIRROR render is missing: ../ultimate-ps4-player/design/review3/full/04-mirror.png
+FAIL  BLOCKS render is missing: ../ultimate-ps4-player/design/review3/full/05-blocks.png
+FAIL  SCOPE render is missing: ../ultimate-ps4-player/design/review3/full/06-scope.png
+FAIL  ORBIT render is missing: ../ultimate-ps4-player/design/review2/full/07-orbit.png
+FAIL  LIQUID render is missing: ../ultimate-ps4-player/design/review2/full/08-liquid.png
+FAIL  NEON render is missing: ../ultimate-ps4-player/design/review3/full/09-neon.png
+FAIL  FLAG render is missing: ../ultimate-ps4-player/design/review3/full/10-flag.png
+FAIL  WORM render is missing: ../ultimate-ps4-player/design/review3/full/12-worm.png
+FAIL  WINDMILL render is missing: ../ultimate-ps4-player/design/review3/full/13-windmill.png
+visuals check: 18 registered, 11 rebuilt, 13 problems</pre></td><td class="t">0.1s</td></tr><tr><td class="dot" style="color:#2ecc71">●</td><td><b>Document links</b><div class="what">every relative link in the docs resolves</div></td><td class="t">0.1s</td></tr></table>
 
 <h2>Waiting on the console</h2>
 <table><tr><td class="dot" style="color:#f39c12">●</td>
-<td><b>The run MANIFEST §2 asks for</b><div class="what">run v118 (files/Ultimate-Media-Player-v118.pkg, MD5 349943cbd65ddb1580a9e47aec7de1b0) and pull app.log: the video: SRC / video: RATE / pull_rounds lines are the only way to settle the 16 fps question</div></td>
+<td><b>The run MANIFEST §2 asks for</b><div class="what">Install and run v144 — files/Ultimate-Media-Player-v144.pkg, MD5 2c7a3a6f070c53d9ce47555ac2670795; sheet docs/CONSOLE-TRIP-2026-11-25.md. Pull app.log: it must name v1.44-8c6bccde0f11 and print the compat: block (avplayer module handle=N, GetVideoDataEx=yes, four rc= lines), plus screen: home, quality step 1 -&gt; 2 and a picture in the music screen&#x27;s box</div></td>
 <td class="t">waiting</td></tr></table>
 
 <h2>Predictions for that run</h2>
 <table><tr><th>#</th><th>Claim</th><th>Result</th></tr><tr><td class="mono">P0</td><td>All five configs report err=0x0000 after the vec2 fix (A2)</td><td><span class="pill" style="background:#2ecc71">missed</span></td></tr><tr><td class="mono">P1</td><td>A empty (clear + swap) lands at 8–10 ms, because the swap alone measured 8.3 ms in the v3 sample and nothing e</td><td><span class="pill" style="background:#2ecc71">hit</span></td></tr><tr><td class="mono">P2</td><td>B−A (ramp + 2,000 sprites at 1080p into the half-float target) is 4–8 ms</td><td><span class="pill" style="background:#f39c12">void</span></td></tr><tr><td class="mono">P3</td><td>C−B (bright, blur1, blur2, composite at 480x270) is 1–3 ms</td><td><span class="pill" style="background:#2ecc71">missed</span></td></tr><tr><td class="mono">P4</td><td>D−C (4,000 extra sprites) is 1–3 ms, i.e. sprites scale roughly linearly</td><td><span class="pill" style="background:#f39c12">open</span></td></tr><tr><td class="mono">P5</td><td>E−C (960x540 bloom targets instead of 480x270) costs +1–3 ms, i.e. bloom is fill-bound at its target size</td><td><span class="pill" style="background:#f39c12">open</span></td></tr></table>
 
 <h2>Notes</h2>
-<ul><li>falsifier figures absent from their own row - derived, or misquoted: R1 12.52; R6 16.6; R15 3.69</li><li>cited logs not archived in files/: app.log, gpu-bloom.log, gpu-bloom101.log, gpu-bloom102.log, gpu-bloom96.log, gpu-bloom97.log, gpu-bloom98.log, gpu-bloom99.log, gpu-shader-cat.log, old.log, piglet-gpu-test-v3.log</li></ul>
+<ul><li>cited logs not archived in files/: gpu-bloom.log, gpu-bloom102.log, gpu-bloom96.log, gpu-bloom97.log, gpu-bloom98.log, gpu-bloom99.log, gpu-shader-cat.log, old.log, piglet-gpu-test-v3.log</li></ul>
 
 <h2>Rule index</h2>
-<div class="card"><div class="v">48 rules indexed from the documents, with
+<div class="card"><div class="v">49 rules indexed from the documents, with
 status and evidence — <span class="mono">files/RULES.index</span></div>
-<div class="what">assumed 5, measured 27, procedural 14, researched only 2</div></div>
+<div class="what">assumed 4, measured 24, procedural 19, researched only 2</div></div>
 
 <div class="foot">Every row is produced by running the real checker, not by
 remembering its result. Amber means the system is fine but a fact is unproven.</div>

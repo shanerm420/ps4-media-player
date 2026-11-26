@@ -9,11 +9,11 @@ paperwork stops being true.
 
 1. [AGENTS.md](../AGENTS.md) — the rules. Hard rules, workspace rules,
    measurement rules, and G1–G10.
-2. [Manifest §2](manifest/02-current-focus.md) — where the project is
+2. [Manifest §2](manifest/02-current-focus-m2-state-the-one-block-to-read-first.md) — where the project is
    right now: latest builds, the blocking question, the next action.
 3. [Rule index](rules/README.md) — every rule with its status and the
    evidence behind it. `measured` means a console log proves it.
-4. [Manifest §9](manifest/09-ps4-knowledge-base.md) — the knowledge
+4. [Manifest §9](manifest/09-ps4-knowledge-base-m9-knowledge-what-this-console-does.md) — the knowledge
    base: what this console does, measured on this console.
 5. [History](HISTORY.md) — why each rule exists.
 
