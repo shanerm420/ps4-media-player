@@ -11,6 +11,7 @@
  * that ui.c draws (library, selection, playback position, EQ settings) and
  * turns controller buttons into actions.
  */
+#include <ctype.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -26,6 +27,7 @@
 
 #include <SDL2/SDL.h>
 #include <orbis/Sysmodule.h>
+#include "compat.h"
 #include <orbis/libkernel.h>
 
 /* Fixed by tools/buildstamp.py so two builds of the same source are identical.
@@ -35,6 +37,12 @@
 #endif
 #ifndef BUILD_TIME
 #define BUILD_TIME __TIME__
+#endif
+#ifndef BUILD_VER
+#define BUILD_VER "0.00"
+#endif
+#ifndef BUILD_SRC
+#define BUILD_SRC "000000000000"
 #endif
 
 /* One log file (app.log) and one settings file (config.ini); the two modules
@@ -56,7 +64,26 @@
 #include "video_orbis.h"
 #include "vis_art.h"
 
-#define BUILD_ID "v118"
+/* The identity of this binary: the version from the Makefile plus the hash of
+ * the source it was compiled from. It used to be a hand-typed string, which was
+ * still saying "v124" five builds later - a console log could not name the
+ * build it came from. `tools/check-pkg.py` reads this hash back out of the
+ * shipped eboot.bin, so a package now carries the proof of its own source. */
+#define BUILD_ID "v" BUILD_VER "-" BUILD_SRC
+
+/* What was compiled in. Without this a log could not tell a package that carries
+ * the plate effects from one that does not, which is exactly the question the
+ * console trip is meant to answer. */
+#ifdef VIS_PLATE_FX
+#define BUILD_FX "plate effects IN"
+#else
+#define BUILD_FX "plate effects OUT"
+#endif
+#ifdef UI_FONT_ATLAS
+#define BUILD_FONT "inter atlas"
+#else
+#define BUILD_FONT "8x8 font"
+#endif
 
 #define OUT_RATE      48000
 #define BLOCK_FRAMES  2048   /* ~43 ms per block: enough slack that a slow
@@ -154,9 +181,81 @@ static int     s_mv_dirty = 1;
 static int     s_home_sel;                 /* card on the home screen, 0..3 */
 static int     s_sel_music;                /* last selection in each section */
 static int     s_sel_video;
+/* R31: these flags are written by the audio thread and read by the main thread,
+ * and `volatile` is not synchronisation. The two writes that mark a track as
+ * finished used to happen separately, so a skip landing between them either
+ * lost the restart or advanced the list twice. Every write now goes through
+ * s_state_mtx, and a track generation makes a finish belonging to a track we
+ * have already left impossible to act on. The lock is never held across a
+ * decode, a resample or an audio output. */
+static pthread_mutex_t s_state_mtx = PTHREAD_MUTEX_INITIALIZER;
 static volatile int s_playing;
-static volatile int s_quit;
+static volatile int s_quit;            /* set once at shutdown; plain by design */
 static volatile int s_track_finished;
+static unsigned s_track_gen;           /* bumped by every play, skip and stop */
+static unsigned s_play_gen;            /* the generation the decoder is playing */
+static unsigned s_finished_gen;        /* the generation that reached the end */
+
+static void state_set_playing(int v)
+{
+    pthread_mutex_lock(&s_state_mtx);
+    s_playing = v;
+    pthread_mutex_unlock(&s_state_mtx);
+}
+
+/* A new track is starting, or playback is being abandoned: a finish the audio
+ * thread has not published yet belongs to the track we are leaving. */
+static void state_new_track(void)
+{
+    pthread_mutex_lock(&s_state_mtx);
+    s_track_gen++;
+    s_track_finished = 0;
+    s_finished_gen   = 0;
+    pthread_mutex_unlock(&s_state_mtx);
+}
+
+/* Start or resume: the decoder is playing this generation from now on. */
+static void state_begin_play(void)
+{
+    pthread_mutex_lock(&s_state_mtx);
+    s_play_gen = s_track_gen;
+    s_playing  = 1;
+    pthread_mutex_unlock(&s_state_mtx);
+}
+
+static unsigned state_play_gen(void)
+{
+    unsigned g;
+
+    pthread_mutex_lock(&s_state_mtx);
+    g = s_play_gen;
+    pthread_mutex_unlock(&s_state_mtx);
+    return g;
+}
+
+/* Called from the main loop: 1 exactly once per finished track, never for a
+ * generation other than the current one. */
+static int state_take_finished(void)
+{
+    int      take = 0, stale = 0;
+    unsigned was = 0, now = 0;
+
+    pthread_mutex_lock(&s_state_mtx);
+    if (s_track_finished) {
+        was              = s_finished_gen;
+        now              = s_track_gen;
+        s_track_finished = 0;
+        if (s_finished_gen == s_track_gen)
+            take = 1;
+        else
+            stale = 1;
+    }
+    pthread_mutex_unlock(&s_state_mtx);
+
+    if (stale)
+        plog("audio: dropped a stale finish (track %u, now %u)", was, now);
+    return take;
+}
 
 static Volume       s_vol;
 static Eq           s_eq;
@@ -252,6 +351,26 @@ static int          s_pic_tex_w, s_pic_tex_h, s_pic_serial = -1;
 static int  s_vis_style;                 /* VIS_STYLE_*, TRIANGLE cycles it */
 static int  s_vis_full;                  /* L3: the visualiser fills the screen */
 static int  s_theme;                     /* UI theme/skin, SQUARE on home */
+static int  s_set_row;                   /* settings screen highlight */
+
+/* Search. The query is spelled on the on-screen keyboard in ui.c; this is the
+ * string, the cursor's place on that keyboard, and whether it is up. */
+static char s_search[40];
+static int  s_search_active;
+static int  s_search_pos;
+
+/* A change that belongs in config.ini but should not cost a file write in the
+ * frame that paid for the key press: volume is stepped one dB at a time, and a
+ * burst of presses used to leave the value unsaved entirely. The flag marks it
+ * and the main loop writes it once the pad goes quiet. */
+static int    s_cfg_dirty;
+static Uint32 s_cfg_dirty_at;
+
+static void settings_touch(void)
+{
+    s_cfg_dirty    = 1;
+    s_cfg_dirty_at = SDL_GetTicks();
+}
 
 /* The settings live in config.ini now. These two are the join between the file
  * and the running state: apply on boot (and on a reload), capture and save
@@ -335,6 +454,7 @@ static void settings_save(void)
     cfg.ui.color_order        = s_pic_rb_swap ? 1 : 0;
 
     cfg_save();
+    s_cfg_dirty = 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1042,7 +1162,11 @@ static void play_track(int index)
     if (index < 0 || index >= s_track_count)
         return;
 
-    s_playing = 0;
+    /* R31: a new generation starts before the old track is closed, so a finish
+     * the audio thread is still holding belongs to the track we are leaving. */
+    state_new_track();
+    state_set_playing(0);
+
     if (s_src_open) {
         mp3_close(&s_src);
         s_src_open = 0;
@@ -1084,12 +1208,11 @@ static void play_track(int index)
         video_show_hud();
         s_video_serial   = -1;              /* force the first upload */
         s_current        = index;
-        s_track_finished = 0;
         s_duration       = video_duration_sec();
         snprintf(s_format, sizeof(s_format), "%s", video_format_note());
         snprintf(s_status, sizeof(s_status), "%s   %s",
                  s_tracks[index].name, video_format_note());
-        s_playing = 1;
+        state_begin_play();
         return;
     }
 
@@ -1099,7 +1222,6 @@ static void play_track(int index)
     }
     s_src_open = 1;
     s_current  = index;
-    s_track_finished = 0;
     s_duration = mp3_duration_est(&s_src);
 
     /* Decode one frame to learn the stream format, then rewind to the start.
@@ -1158,13 +1280,13 @@ static void play_track(int index)
              s_tracks[index].name, (unsigned long)s_src.size);
         mp3_close(&s_src);
         s_src_open = 0;
-        s_playing  = 0;
+        state_set_playing(0);
         snprintf(s_status, sizeof(s_status), "Cannot decode %s",
                  s_tracks[index].name);
         return;
     }
 
-    s_playing = 1;
+    state_begin_play();
 }
 
 /* ------------------------------------------------------------------ */
@@ -1843,6 +1965,7 @@ static void *audio_thread(void *arg)
         float *resampled = s_ares;
         float *stereo    = s_astereo;
         int   frames, outn, i;
+        unsigned mygen;
 
         if (s_video_mode) {
             float *vstereo = s_avideo;
@@ -1878,11 +2001,21 @@ static void *audio_thread(void *arg)
             continue;
         }
 
+        /* R31: which track are we decoding? Read before the decode, so a
+         * finish is labelled with the generation whose audio produced it, not
+         * with whatever is current by the time it is published. */
+        mygen = state_play_gen();
+
         frames = mp3_read(&s_src, decoded, 1152);
         if (frames == 0) {
             if (s_src.finished) {
-                s_playing = 0;
+                /* One critical section: the main loop can never see "stopped"
+                 * without also seeing which generation stopped. */
+                pthread_mutex_lock(&s_state_mtx);
+                s_playing        = 0;
                 s_track_finished = 1;
+                s_finished_gen   = mygen;
+                pthread_mutex_unlock(&s_state_mtx);
             } else {
                 /* Skipping a stray byte between frames: do not spin, the
                  * main loop needs the CPU to keep drawing. */
@@ -2102,6 +2235,45 @@ static void mv_genres(void)
                  s_mv_rows[i].count, s_mv_rows[i].count == 1 ? "" : "S");
 }
 
+/* Case-insensitive substring test, so "neon" finds "The Neon Division" and
+ * a typed query does not have to match the tag's capitals. */
+static int contains_ci(const char *hay, const char *needle)
+{
+    size_t n;
+
+    if (!needle || !needle[0])
+        return 1;
+    if (!hay)
+        return 0;
+    n = strlen(needle);
+    for (; *hay; hay++) {
+        size_t i = 0;
+
+        while (i < n && hay[i] &&
+               tolower((unsigned char)hay[i]) == tolower((unsigned char)needle[i]))
+            i++;
+        if (i == n)
+            return 1;
+    }
+    return 0;
+}
+
+/* Keeps the rows whose name or tag matches the query. Compaction runs forward
+ * over the same array, so no row is overwritten before it has been read. */
+static void mv_filter(void)
+{
+    int i, n = 0;
+
+    if (!s_search[0])
+        return;
+    for (i = 0; i < s_mv_count; i++) {
+        if (contains_ci(s_mv_rows[i].name, s_search) ||
+            contains_ci(s_mv_rows[i].sub, s_search))
+            s_mv_rows[n++] = s_mv_rows[i];
+    }
+    s_mv_count = n;
+}
+
 static void music_view_build(void)
 {
     if (!s_mv_dirty)
@@ -2133,6 +2305,7 @@ static void music_view_build(void)
         mv_tracks_of(0, NULL, NULL, 0);
         break;
     }
+    mv_filter();
     if (s_mv_row >= s_mv_count)
         s_mv_row = s_mv_count > 0 ? s_mv_count - 1 : 0;
 }
@@ -2320,7 +2493,8 @@ static void stop_video(void)
     s_video_paused     = 0;
     s_video_settings   = 0;
     s_video_fullscreen = 0;
-    s_playing          = 0;
+    state_new_track();
+    state_set_playing(0);
     s_duration         = 0;
     s_format[0]        = '\0';
     snprintf(s_status, sizeof(s_status), "Stopped");
@@ -2333,6 +2507,8 @@ static void volume_step(int dir)
     s_vol.muted = 0;
     vol_add_db(&s_vol, dir > 0 ? 1.0f : -1.0f);
     s_vid_dirty = 1;
+    settings_touch();          /* the level is remembered, not just heard */
+    plog_once("volume: stepped by the pad");
 }
 
 /* Moves the video list one row. The highlight alone never opens a file: the
@@ -2563,9 +2739,9 @@ static void music_keys(int key)
             s_selected  = tr;
             s_sel_music = tr;
             if (s_playing && s_current == tr) {
-                s_playing = 0;
+                state_set_playing(0);
             } else if (s_current == tr && s_src_open && !s_track_finished) {
-                s_playing = 1;                   /* resume */
+                state_begin_play();              /* resume */
             } else {
                 play_track(tr);
             }
@@ -2577,7 +2753,8 @@ static void music_keys(int key)
         plog("library: view %s", k_mv_name[s_mv]);
         break;
     case SDLK_b:                                 /* keyboard only: stop */
-        s_playing   = 0;
+        state_new_track();
+        state_set_playing(0);
         s_current   = -1;
         s_format[0] = '\0';
         s_duration  = 0;
@@ -2590,7 +2767,12 @@ static void music_keys(int key)
         snprintf(s_status, sizeof(s_status), "Visualization: %s",
                  vis_style_name(s_vis_style));
         break;
-    case SDLK_t: browser_open(); break;          /* OPTIONS: drives */
+    case SDLK_t:                                 /* OPTIONS: search */
+        s_search_active = 1;
+        s_search_pos    = 0;
+        snprintf(s_status, sizeof(s_status), "Search: %s",
+                 s_search[0] ? s_search : "type with the pad");
+        break;
     case SDLK_q: music_neighbour(-1); break;
     case SDLK_w: music_neighbour(+1); break;
     /* Left and right seek only while the visualization fills the screen, so
@@ -2807,11 +2989,206 @@ static void picture_keys(int key)
     }
 }
 
+/* ------------------------------------------------------------- the search - */
+
+/* The keyboard in ui.c has ten columns and forty keys: A-Z, 0-9, SPACE, DEL,
+ * CLEAR, DONE. One table, used by both files, so a key cannot be drawn on one
+ * square and act on another. */
+#define SEARCH_COLS 10
+#define SEARCH_KEYS 40
+
+static void search_take(int k)
+{
+    size_t n = strlen(s_search);
+
+    if (k == 39) {                       /* DONE */
+        s_search_active = 0;
+        s_mv_dirty = 1;
+        snprintf(s_status, sizeof(s_status), "Search: %s",
+                 s_search[0] ? s_search : "cleared");
+        plog("search: %s", s_search[0] ? s_search : "(none)");
+        return;
+    }
+    if (k == 38) {                       /* CLEAR */
+        s_search[0] = '\0';
+    } else if (k == 37) {                /* DEL */
+        if (n > 0)
+            s_search[n - 1] = '\0';
+    } else if (n + 1 < sizeof(s_search)) {
+        if (k == 36)                     /* SPACE */
+            s_search[n] = ' ';
+        else if (k < 26)
+            s_search[n] = (char)('A' + k);
+        else if (k < 36)
+            s_search[n] = (char)('0' + (k - 26));
+        else
+            return;
+        s_search[n + 1] = '\0';
+    }
+    s_mv_dirty = 1;
+    s_mv_row   = 0;
+    snprintf(s_status, sizeof(s_status), "Search: %s",
+             s_search[0] ? s_search : "type with the pad");
+}
+
+static void search_keys(int key)
+{
+    switch (key) {
+    case SDLK_UP:    s_search_pos = (s_search_pos + SEARCH_KEYS - SEARCH_COLS) % SEARCH_KEYS; break;
+    case SDLK_DOWN:  s_search_pos = (s_search_pos + SEARCH_COLS) % SEARCH_KEYS; break;
+    case SDLK_LEFT:  s_search_pos = (s_search_pos + SEARCH_KEYS - 1) % SEARCH_KEYS; break;
+    case SDLK_RIGHT: s_search_pos = (s_search_pos + 1) % SEARCH_KEYS; break;
+    case SDLK_x:     search_take(s_search_pos); break;
+    case SDLK_s:     search_take(37); break;      /* SQUARE: delete */
+    case SDLK_e:     search_take(38); break;      /* TRIANGLE: clear */
+    case SDLK_t:
+    case SDLK_ESCAPE: s_search_active = 0; break; /* OPTIONS / CIRCLE */
+    default: break;
+    }
+}
+
+/* ----------------------------------------------------------- the settings - */
+
+#define SET_ROWS 10
+
+static const char *const k_set_label[SET_ROWS] = {
+    "SKIN", "VISUALIZATION", "SUBTITLES", "VOLUME", "MUTE",
+    "VIDEO FIT", "PICTURE FIT", "LOG LEVEL", "EQUALIZER", "RELOAD CONFIG",
+};
+
+static char s_set_value[SET_ROWS][48];
+
+static const char *const k_theme_note[] = {
+    "Filaments of haze drifting through a cold room.",
+    "Curtains of light hanging over dark water.",
+    "Warm grain, a leak of light in the corner.",
+    "A grid floor running to a vanishing point.",
+    "Black, silver, and a field of stars.",
+    "A horizon, a night sky, and a path on the water.",
+};
+
+static void settings_fill_values(void)
+{
+    static const char *const k_fit[3] = { "FIT", "FILL", "STRETCH" };
+    static const char *const k_sub[3] = { "SMALL", "NORMAL", "LARGE" };
+    static const char *const k_log[3] = { "OFF", "SUMMARY", "DETAILED" };
+
+    snprintf(s_set_value[0], sizeof(s_set_value[0]), "%s",
+             ui_theme_name(s_theme));
+    snprintf(s_set_value[1], sizeof(s_set_value[1]), "%s  %d/%d",
+             vis_style_name(s_vis_style), s_vis_style + 1, VIS_STYLE_COUNT);
+    snprintf(s_set_value[2], sizeof(s_set_value[2]), "%s",
+             k_sub[s_sub_size >= 0 && s_sub_size < 3 ? s_sub_size : 1]);
+    if (s_vol.muted)
+        snprintf(s_set_value[3], sizeof(s_set_value[3]), "MUTED");
+    else
+        snprintf(s_set_value[3], sizeof(s_set_value[3]), "%+.0f DB",
+                 (double)vol_current_db(&s_vol));
+    snprintf(s_set_value[4], sizeof(s_set_value[4]), "%s",
+             s_vol.muted ? "ON" : "OFF");
+    snprintf(s_set_value[5], sizeof(s_set_value[5]), "%s",
+             k_fit[s_video_aspect >= 0 && s_video_aspect < 3 ? s_video_aspect : 0]);
+    snprintf(s_set_value[6], sizeof(s_set_value[6]), "%s",
+             k_fit[s_pic_fit >= 0 && s_pic_fit < 3 ? s_pic_fit : 0]);
+    snprintf(s_set_value[7], sizeof(s_set_value[7]), "%s",
+             k_log[cfg.log.measure_level >= 0 && cfg.log.measure_level < 3
+                   ? cfg.log.measure_level : 1]);
+    snprintf(s_set_value[8], sizeof(s_set_value[8]), "%s",
+             s_eq.enabled ? "OPEN" : "OPEN (BYPASSED)");
+    snprintf(s_set_value[9], sizeof(s_set_value[9]), "PRESS CROSS");
+}
+
+static void settings_activate(void)
+{
+    if (s_set_row == 8) {                 /* EQUALIZER */
+        s_show_eq = 1;
+        snprintf(s_status, sizeof(s_status), "Equalizer");
+    } else if (s_set_row == 9) {          /* RELOAD CONFIG */
+        if (cfg_load() == 0) {
+            settings_apply();
+            log_set_level(cfg.log.measure_level);
+            settings_fill_values();
+            snprintf(s_status, sizeof(s_status), "Config reloaded");
+            plog("config: reloaded from the settings screen");
+        } else {
+            snprintf(s_status, sizeof(s_status), "Config could not be read");
+        }
+    }
+}
+
+static void settings_step(int dir)
+{
+    switch (s_set_row) {
+    case 0:
+        s_theme = (s_theme + dir + ui_theme_count()) % ui_theme_count();
+        break;
+    case 1:
+        s_vis_style = (s_vis_style + dir + VIS_STYLE_COUNT) % VIS_STYLE_COUNT;
+        break;
+    case 2:
+        s_sub_size = (s_sub_size + dir + UI_SUB_SIZE_COUNT) % UI_SUB_SIZE_COUNT;
+        break;
+    case 3:
+        volume_step(dir);
+        break;
+    case 4:
+        s_vol.muted = !s_vol.muted;
+        vol_set_db(&s_vol, s_vol.volume_db);
+        settings_touch();
+        break;
+    case 5:
+        s_video_aspect = (s_video_aspect + dir + UI_ASPECT_COUNT) % UI_ASPECT_COUNT;
+        break;
+    case 6:
+        s_pic_fit = (s_pic_fit + dir + UI_ASPECT_COUNT) % UI_ASPECT_COUNT;
+        break;
+    case 7:
+        cfg.log.measure_level = (cfg.log.measure_level + dir + 3) % 3;
+        log_set_level(cfg.log.measure_level);
+        break;
+    default:
+        return;                           /* the two actions need Cross */
+    }
+    settings_fill_values();
+    settings_save();
+    settings_touch();
+    plog("settings: %s = %s", k_set_label[s_set_row], s_set_value[s_set_row]);
+}
+
+static void settings_keys(int key)
+{
+    switch (key) {
+    case SDLK_UP:   s_set_row = (s_set_row + SET_ROWS - 1) % SET_ROWS; break;
+    case SDLK_DOWN: s_set_row = (s_set_row + 1) % SET_ROWS; break;
+    case SDLK_LEFT: settings_step(-1); break;
+    case SDLK_RIGHT: settings_step(+1); break;
+    case SDLK_x:    settings_activate(); break;
+    case SDLK_ESCAPE: s_screen = UI_SCREEN_HOME; break;
+    default: break;
+    }
+}
+
 /* ---------------------------------------------------------------- sections */
 
 /* Entering a section sets up exactly one engine: songs stop when the video
  * section starts, the video engine stops when music or pictures start, and the
  * picture viewer decodes the highlighted photo. */
+/* The name a log line uses for a screen. G2's runbook reads a file that stops by
+ * naming the stage with no successor; until v141 no line said which screen the
+ * app had entered, so a run that ended on a Cross press could not be placed. */
+static const char *screen_name(int screen)
+{
+    switch (screen) {
+    case UI_SCREEN_HOME:     return "home";
+    case UI_SCREEN_MUSIC:    return "music";
+    case UI_SCREEN_VIDEOS:   return "videos";
+    case UI_SCREEN_PICTURES: return "pictures";
+    case UI_SCREEN_SETTINGS: return "settings";
+    case UI_SCREEN_BROWSER:  return "browser";
+    default:                 return "unknown";
+    }
+}
+
 static void enter_section(int screen)
 {
     int i;
@@ -2819,6 +3196,7 @@ static void enter_section(int screen)
     s_show_eq        = 0;
     s_eq_preset_open = 0;
     s_vis_full       = 0;      /* a section always opens in its normal view */
+    s_search_active  = 0;      /* and never with the keyboard still up */
 
     switch (screen) {
     case UI_SCREEN_MUSIC:
@@ -2846,7 +3224,8 @@ static void enter_section(int screen)
 
     case UI_SCREEN_VIDEOS:
         if (s_src_open) {
-            s_playing  = 0;
+            state_new_track();
+            state_set_playing(0);
             mp3_close(&s_src);
             s_src_open = 0;
         }
@@ -2874,6 +3253,12 @@ static void enter_section(int screen)
             picture_select(s_pic_sel < 0 ? 0 : s_pic_sel);
         break;
 
+    case UI_SCREEN_SETTINGS:
+        s_screen  = UI_SCREEN_SETTINGS;
+        s_set_row = 0;
+        settings_fill_values();
+        break;
+
     default:
         browser_open();
         break;
@@ -2882,6 +3267,13 @@ static void enter_section(int screen)
 
 static void handle_key(int key)
 {
+    /* The search keyboard owns the pad while it is up: nothing behind it may
+     * also see the press. */
+    if (s_search_active) {
+        search_keys(key);
+        return;
+    }
+
     /* In the music section L3 is the full-screen visualization; everywhere
      * else it is still the mute key. */
     if (key == SDLK_m && s_screen == UI_SCREEN_MUSIC && !s_show_eq) {
@@ -3000,27 +3392,26 @@ static void handle_key(int key)
     switch (s_screen) {
     case UI_SCREEN_HOME:
         switch (key) {
-        case SDLK_LEFT:
-            if (s_home_sel & 1)
-                s_home_sel--;
-            break;
-        case SDLK_RIGHT:
-            if (!(s_home_sel & 1) && s_home_sel < 3)
-                s_home_sel++;
-            break;
+        /* The rail is a single column of five doors, so up and down walk it and
+         * wrap; left and right have nothing to do here. The old grid used the
+         * d-pad as a 2x2, which stopped making sense the moment the grid became
+         * a rail. */
         case SDLK_UP:
+            s_home_sel = (s_home_sel + 4) % 5;
+            break;
         case SDLK_DOWN:
-            s_home_sel ^= 2;
+            s_home_sel = (s_home_sel + 1) % 5;
             break;
         case SDLK_x:
-            if (s_home_sel == 0)      enter_section(UI_SCREEN_MUSIC);
-            else if (s_home_sel == 1) enter_section(UI_SCREEN_VIDEOS);
-            else if (s_home_sel == 2) enter_section(UI_SCREEN_PICTURES);
-            else                      browser_open();
+            if (s_home_sel == 3)      browser_open();
+            else                      enter_section(s_home_sel == 0 ? UI_SCREEN_MUSIC
+                                             : s_home_sel == 1 ? UI_SCREEN_VIDEOS
+                                             : s_home_sel == 2 ? UI_SCREEN_PICTURES
+                                             : UI_SCREEN_SETTINGS);
             break;
         case SDLK_t:
         case SDLK_b:
-            browser_open();
+            enter_section(UI_SCREEN_SETTINGS);
             break;
         case SDLK_s:                     /* SQUARE: next theme / skin */
             s_theme = (s_theme + 1) % ui_theme_count();
@@ -3039,6 +3430,10 @@ static void handle_key(int key)
 
     case UI_SCREEN_PICTURES:
         picture_keys(key);
+        return;
+
+    case UI_SCREEN_SETTINGS:
+        settings_keys(key);
         return;
 
     case UI_SCREEN_BROWSER:
@@ -3247,6 +3642,20 @@ static void build_model(UiModel *m)
     m->pic_rb_swap       = s_pic_rb_swap;
 
     m->theme_name    = ui_theme_name(s_theme);
+    m->theme_note    = (s_theme >= 0 && s_theme < ui_theme_count())
+                     ? k_theme_note[s_theme] : k_theme_note[0];
+
+    m->search_query  = s_search;
+    m->search_active = s_search_active;
+    m->search_pos    = s_search_pos;
+
+    settings_fill_values();
+    m->set_row   = s_set_row;
+    m->set_count = SET_ROWS;
+    for (i = 0; i < SET_ROWS; i++) {
+        m->set_label[i] = k_set_label[i];
+        m->set_value[i] = s_set_value[i];
+    }
     m->usb_present   = s_usb_present;
     m->usb_count     = s_usb_count;
     m->confirm_delete = s_browser_confirm;
@@ -3647,6 +4056,21 @@ static void shot_save(SDL_Renderer *ren)
         plog("shot: write failed on %s", path);
 }
 
+/* Opens the controller if one is present. Called at boot, when SDL reports a
+ * device being added, and once a second while there is no handle - a pad that is
+ * asleep at launch, or that comes back after the PS menu took it, is a state the
+ * console produces routinely and the app should simply recover from. */
+static void handle_pad_open(SDL_GameController **pp, SDL_Joystick **pj)
+{
+    *pp = SDL_GameControllerOpen(0);
+    if (*pp)
+        *pj = SDL_GameControllerGetJoystick(*pp);
+    else
+        *pj = SDL_JoystickOpen(0);
+    if (*pj)
+        plog("pad: opened (%s)", *pp ? "game controller" : "joystick only");
+}
+
 static void pad_triggers(SDL_GameController *gc, SDL_Joystick *js)
 {
     const int ON  = 16384;      /* half travel: a click, not a graze */
@@ -3700,13 +4124,62 @@ int main(int argc, char **argv)
     log_set_uptime_us(log_uptime_us);
     log_open(BUILD_ID);
     log_msg(LOG_INFO, "boot", "main entered (build %s)", BUILD_ID);
+    log_msg(LOG_INFO, "build", "%s: %s, %s", BUILD_ID, BUILD_FX, BUILD_FONT);
+    log_msg(LOG_INFO, "build",
+            "one file is the whole record: probe, tier, step, per-second "
+            "paint/flush/present, style lines. No other file is needed");
     install_crash_logging();
     /* One file holds every setting. It is created here on the first run, and
      * the old eq.cfg / picture.cfg / viewer.cfg are migrated into it once and
      * then ignored. A broken value can never stop the app: it falls back to
      * its default and says so in the log. */
     cfg_load();
+    /* What machine is this? Two questions the console will answer, both
+     * declared by the toolchain: whether this process is running in Neo mode,
+     * and what the CPU is clocked at. Neither is a model number, and that is
+     * the point - a Pro in base mode is not asked to render like a Pro, and a
+     * base PS4 in any variant is never asked for headroom it does not have.
+     * `tier = 0` in config.ini means this probe decides. */
+    {
+        /* Logged on every run, even when config.ini states the tier: the probe
+         * is how the hardware is learned from a console trip, and it used to be
+         * silent whenever a tier was set, so the trip sheet asked for a line
+         * that could not appear. */
+        int neo = (int)sceKernelIsNeoMode();
+        int raw = (int)sceKernelGetCpuFrequency();
+        /* The call answers in Hz, not MHz: this console returned 2100000000 and
+         * the log printed "2100000000 MHz", which reads as nonsense and buried
+         * the one number that says what the machine is. A build that answers in
+         * MHz is tolerated, so neither answer is ever printed wrong. */
+        int mhz = raw > 100000 ? (raw + 500000) / 1000000 : raw;
+
+        log_msg(LOG_INFO, "quality", "probe: neo mode %d, cpu %d MHz (%d Hz as returned)",
+                neo, mhz, raw);
+        if (cfg.quality.tier == 0) {
+            /* Tier = 0 in config.ini means this probe decides, and the probe has
+             * two answers. Neo mode is the toolchain's own and is believed
+             * first - but it read 0 on this console while the clock read 2100
+             * MHz, and a base PS4 is a 1600 MHz machine, so a 0 means "not
+             * asked to be a Pro", not "not a Pro". The clock buys the
+             * headroom; if a base unit ever reports a Pro clock, the tighter
+             * budget it gets is self-correcting, because the ladder steps down
+             * the moment a frame misses it. */
+            cfg.quality.tier = neo ? 2 : (mhz >= 2000 ? 2 : 1);
+            if (!neo && cfg.quality.tier == 2)
+                log_msg(LOG_INFO, "quality",
+                        "probe: neo mode 0 but cpu %d MHz is Pro-class (base is 1600 MHz); "
+                        "tier 2 with the ladder still free to step down", mhz);
+        }
+    }
+    cfg_apply_tier();
     log_set_level(cfg.log.measure_level);
+    log_msg(LOG_INFO, "quality",
+            "tier %d (%s), step1 budget %.1f ms, budget %.1f ms, max step %d",
+            cfg.quality.tier,
+            cfg.quality.tier == 1 ? "base clock" :
+            cfg.quality.tier == 2 ? "Pro-class clock" : "auto, measured by the ladder",
+            cfg.quality.budget_step1_ms, cfg.quality.budget_ms,
+            cfg.quality.max_step);
     log_msg(LOG_INFO, "log", "measurement level %d (0 off, 1 summary, 2 detailed)",
             cfg.log.measure_level);
 
@@ -3771,12 +4244,6 @@ int main(int argc, char **argv)
     const char *kind = "accelerated (GPU)";
 
     wsurf = NULL;
-    /* A3b: A3 hands the scaling to the renderer, so the filter stops being
-     * implicit. Set before the renderer exists - backends read this once -
-     * and read it back below: a hint silently ignored must not be allowed
-     * to read as "linear". */
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
-
     ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
     if (!ren) {
         plog("boot: accelerated renderer failed: %s", SDL_GetError());
@@ -3798,11 +4265,6 @@ int main(int argc, char **argv)
         return 1;
     }
     plog("boot: renderer ok (%s)", kind);
-    {
-        const char *sq = SDL_GetHint(SDL_HINT_RENDER_SCALE_QUALITY);
-
-        plog("boot: scale quality hint '%s'", sq ? sq : "(unset)");
-    }
 
     /* Everything about the output path that decides what a frame costs: the
      * renderer, the surface format the software blit has to convert into, and
@@ -3847,11 +4309,7 @@ int main(int argc, char **argv)
      * how OPTIONS ended up doing nothing and L1/R1 doing the wrong thing. */
     joy = NULL;
     pad = NULL;
-    pad = SDL_GameControllerOpen(0);
-    if (pad)
-        joy = SDL_GameControllerGetJoystick(pad);
-    else
-        joy = SDL_JoystickOpen(0);
+    handle_pad_open(&pad, &joy);
     plog("boot: pad %s", pad ? "game controller opened"
                              : (joy ? "joystick only" : "not found"));
     /* What the pad actually exposes is logged once, because the trigger
@@ -3921,6 +4379,12 @@ int main(int argc, char **argv)
          (unsigned)sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_SYSTEM_SERVICE));
     plog("boot: video out module rc=0x%08X",
          (unsigned)sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_VIDEO_OUT));
+    /* What this firmware actually exports, asked once, before any video call.
+     * The answer goes in the log as "compat:" lines, and the video path then
+     * uses a resolved pointer when there is one and the linked symbol when
+     * there is not - so an absent export is a log line and a fallback, never an
+     * unresolved import trapping at the first frame. */
+    compat_probe();
 
     vol_init(&s_vol);
     eq_init(&s_eq, OUT_RATE, 2);
@@ -4119,12 +4583,29 @@ int main(int argc, char **argv)
          * frame has been submitted, so the first iteration presents before
          * it polls. */
         if (frame > 0) {
+        /* A pad that woke up, or came back from the PS menu, is picked up here
+         * rather than waiting for an event the port may not deliver. */
+        if (!joy && (frame % 60) == 0)
+            handle_pad_open(&pad, &joy);
         while (SDL_PollEvent(&ev)) {
             if (frame < 3)
                 plog("loop[%d]: event type %u", frame, (unsigned)ev.type);
 
             if (ev.type == SDL_QUIT) {
                 running = 0;
+            } else if (ev.type == SDL_JOYDEVICEREMOVED) {
+                /* Unplugging or losing the controller is normal on a console:
+                 * the pad sleeps, the user swaps it, or the system takes it for
+                 * the PS menu. Drop the handle rather than reading a stale one,
+                 * and let the retry below pick up a new device. */
+                plog("pad: joy %d removed", (int)ev.jdevice.which);
+                if (joy && (!pad || SDL_GameControllerGetJoystick(pad) == joy)) {
+                    if (pad) { SDL_GameControllerClose(pad); pad = NULL; }
+                    else     { SDL_JoystickClose(joy); }
+                    joy = NULL;
+                }
+            } else if (ev.type == SDL_JOYDEVICEADDED && !joy) {
+                handle_pad_open(&pad, &joy);
             } else if (ev.type == SDL_KEYDOWN) {
                 handle_key(ev.key.keysym.sym);
             } else if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
@@ -4202,8 +4683,22 @@ int main(int argc, char **argv)
         }
         LAP_ADD(ev);
 
-        if (s_track_finished) {
-            s_track_finished = 0;
+        /* One line per screen change, after the pad has been read and before
+         * anything is drawn: a run that stops then names the screen it was
+         * entering, which is the stage marker G2's runbook asks for. */
+        {
+            static int last_screen = -1;
+
+            if (s_screen != last_screen) {
+                last_screen = s_screen;
+                plog("screen: %s", screen_name(s_screen));
+            }
+        }
+
+        /* R31: act on a finish only for the generation that produced it, so a
+         * skip or play that landed after the decoder stopped cannot be
+         * answered with "advance the list". */
+        if (state_take_finished()) {
             /* next song, never a video from the music list */
             play_neighbour(+1);
         }
@@ -4314,6 +4809,14 @@ int main(int argc, char **argv)
             s_view_h = out_h;
         }
         LAP_ADD(model);
+
+        /* A pad change worth keeping is written once the pad goes quiet: one
+         * write per burst instead of one per dB, so stepping the volume does
+         * not fsync the config file twenty times. */
+        if (s_cfg_dirty && (Sint32)(SDL_GetTicks() - s_cfg_dirty_at) > 900) {
+            settings_save();
+            plog("config: saved after a change");
+        }
 
         s_stage = 4;
         ui_theme_set(s_theme);      /* the skin is a draw-time choice */
@@ -4477,13 +4980,40 @@ int main(int argc, char **argv)
         /* The console parks a GNM app that never answers while its system UI
          * (the PS menu used to close apps) is over it. Ten times a second is
          * enough to answer and rare enough not to stall decoding. */
-        if (s_gnm_loaded && (frame % 6) == 0) {
+        {
             SysStatus st;
+            static int last_over = -1, last_bg = -1;
+            int        src;
 
             memset(&st, 0, sizeof(st));
-            if (sceSystemServiceGetStatus(&st) == 0 &&
-                (st.system_ui_overlaid || st.in_background))
-                sceGnmSubmitDone();
+            src = sceSystemServiceGetStatus(&st);
+            if (src == 0) {
+                /* The quick menu leaves no other mark in this file. Without
+                 * these lines a run says nothing at all about the PS button,
+                 * and "the app stopped when I opened the menu" cannot be
+                 * checked against anything. One line per change of state, so
+                 * the file stays readable. */
+                if ((int)st.system_ui_overlaid != last_over ||
+                    (int)st.in_background != last_bg) {
+                    last_over = st.system_ui_overlaid;
+                    last_bg   = st.in_background;
+                    plog("system: ui overlaid %d, in background %d%s",
+                         last_over, last_bg,
+                         (last_over || last_bg)
+                             ? " (the quick menu owns the screen)" : "");
+                }
+                /* Only a live GNM session needs the keep-alive, and it does not
+                 * need it every frame; the state itself is read every frame,
+                 * because at 150 ms a frame a menu opened and closed inside a
+                 * sixth of a second would otherwise never appear in the log. */
+                if (s_gnm_loaded && (st.system_ui_overlaid || st.in_background) &&
+                    (frame % 6) == 0)
+                    sceGnmSubmitDone();
+            } else if (last_over == -1) {
+                last_over = -2;   /* asked once, answered once */
+                plog("system: status unavailable rc=0x%08X - the quick menu "
+                     "cannot be seen from this build", (unsigned)src);
+            }
         }
 
         if (frame < 3)

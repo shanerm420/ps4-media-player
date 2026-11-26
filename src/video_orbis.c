@@ -32,6 +32,7 @@
 #include <orbis/libkernel.h>
 #include <orbis/_types/kernel.h>
 
+#include "compat.h"
 #include "resampler.h"
 #include "video_orbis.h"
 
@@ -1540,7 +1541,12 @@ int video_step(void)
         int32_t       vrc;
 
         memset(&fi, 0, sizeof(fi));
-        vrc = sceAvPlayerGetVideoDataEx(s_av.handle, &fi);
+        /* The pointer is the console answering "does this firmware export it?",
+         * asked once at boot by compat_probe(). NULL means the linked symbol is
+         * the only answer available, which is every build before v144. */
+        vrc = compat_av_getvideodataex
+                  ? compat_av_getvideodataex(s_av.handle, &fi)
+                  : sceAvPlayerGetVideoDataEx(s_av.handle, &fi);
         if (vrc >= 0 && fi.data) {
             got = 1;
             s_av.ex_frames++;
@@ -1550,7 +1556,10 @@ int video_step(void)
             AvFrameInfo f40;
 
             memset(&f40, 0, sizeof(f40));
-            if (sceAvPlayerGetVideoData(s_av.handle, &f40) >= 0 && f40.data) {
+            if ((compat_av_getvideodata
+                     ? compat_av_getvideodata(s_av.handle, &f40)
+                     : sceAvPlayerGetVideoData(s_av.handle, &f40)) >= 0 &&
+                f40.data) {
                 fi.data                    = f40.data;
                 fi.timestamp_ms            = f40.timestamp_ms;
                 fi.details.video.width     = f40.details.video.width;

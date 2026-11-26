@@ -65,36 +65,68 @@ typedef struct {
     int panel[3], panel_hi[3], line[3], plate[3];
     int text[3], dim[3], faint[3];
     int accent[3], accent2[3], warn[3], ok[3];
+    int concept;            /* what the baked room behind the UI is made of */
 } UiTheme;
 
+/* ---- the skins -----------------------------------------------------------
+ *
+ * A skin is a concept, not a recolour. Each entry carries a palette *and* a
+ * `concept` number that changes what the room behind the interface is made of,
+ * so switching skins changes the place, not just the light in it:
+ *
+ *   0 SMOKE     vertical filaments of haze, cold teal where it is thickest
+ *   1 AURORA    slow curtains of light hanging from the top
+ *   2 FILM      warm haze, grain, and a light leak in the corner
+ *   3 NEON      a perspective grid floor running to the horizon
+ *   4 OBSIDIAN  near-black, a starfield, and a hard vignette
+ *   5 COAST     a horizon, a light path on the water, and a dark sky
+ *
+ * The palette entries are in the same order as UiTheme; the last number is the
+ * concept. All six are the same cost: the room is baked once per skin and only
+ * the pixel formula differs.
+ */
 static const UiTheme k_themes[] = {
-    {   /* ORIGINAL */
+    {   /* 0 SMOKE - the skin the player shipped with */
         { 18,  22,  34 }, {  8,  10,  16 },
         { 22,  28,  42 }, { 31,  40,  62 }, { 44,  56,  82 }, { 13,  17,  26 },
         {232, 236, 246 }, {156, 160, 178 }, {118, 130, 152 },
         { 77, 163, 255 }, { 64, 224, 208 }, {255, 186,  96 },
-        { 96, 230, 150 },
+        { 96, 230, 150 }, 0,
     },
-    {   /* MIDNIGHT */
-        { 10,  14,  26 }, {  4,   6,  12 },
-        { 18,  22,  38 }, { 28,  34,  56 }, { 38,  46,  72 }, { 10,  13,  22 },
-        {226, 232, 246 }, {148, 158, 182 }, {106, 118, 144 },
-        {120, 146, 255 }, {126, 232, 240 }, {255, 190, 110 },
-        { 92, 226, 160 },
+    {   /* 1 AURORA - teal curtains over a cold room */
+        {  8,  26,  30 }, {  3,  10,  14 },
+        { 16,  34,  40 }, { 24,  52,  60 }, { 36,  74,  82 }, {  8,  20,  26 },
+        {230, 246, 246 }, {146, 178, 182 }, {104, 134, 140 },
+        { 70, 232, 190 }, {150, 206, 255 }, {255, 186,  96 },
+        {120, 240, 170 }, 1,
     },
-    {   /* EMERALD */
-        { 12,  28,  24 }, {  6,  14,  12 },
-        { 18,  38,  32 }, { 26,  54,  46 }, { 40,  74,  64 }, { 11,  24,  20 },
-        {228, 244, 236 }, {150, 172, 162 }, {110, 132, 124 },
-        { 82, 220, 150 }, {140, 244, 204 }, {255, 206, 120 },
-        {120, 236, 160 },
+    {   /* 2 FILM - warm, grainy, a leak of light in the corner */
+        { 38,  28,  20 }, { 12,   9,   6 },
+        { 40,  30,  22 }, { 58,  44,  32 }, { 88,  68,  48 }, { 20,  15,  10 },
+        {250, 240, 226 }, {198, 178, 150 }, {150, 132, 110 },
+        {255, 168,  96 }, {255, 222, 150 }, {255, 120,  90 },
+        {180, 220, 140 }, 2,
     },
-    {   /* SUNSET */
-        { 34,  20,  26 }, { 16,   8,  12 },
-        { 44,  26,  32 }, { 62,  36,  46 }, { 92,  56,  66 }, { 26,  14,  18 },
-        {248, 236, 232 }, {186, 158, 154 }, {148, 118, 116 },
-        {255, 138, 110 }, {255, 198, 122 }, {255, 224, 140 },
-        {160, 232, 140 },
+    {   /* 3 NEON - magenta light on a grid that runs to the horizon */
+        { 18,  10,  30 }, {  5,   4,  10 },
+        { 24,  16,  40 }, { 38,  26,  64 }, { 64,  40,  98 }, { 12,   8,  20 },
+        {244, 236, 255 }, {178, 160, 206 }, {128, 112, 160 },
+        {255,  64, 170 }, { 80, 232, 255 }, {255, 190,  90 },
+        {120, 255, 180 }, 3,
+    },
+    {   /* 4 OBSIDIAN - black, silver, stars */
+        { 20,  20,  22 }, {  6,   6,   7 },
+        { 24,  24,  27 }, { 38,  38,  42 }, { 58,  58,  64 }, { 12,  12,  14 },
+        {244, 244, 246 }, {168, 168, 172 }, {116, 116, 122 },
+        {235, 235, 240 }, {150, 200, 255 }, {255, 180, 120 },
+        {150, 230, 170 }, 4,
+    },
+    {   /* 5 COAST - night water, a light path, a horizon */
+        { 10,  24,  40 }, {  4,   8,  16 },
+        { 16,  30,  48 }, { 24,  44,  70 }, { 38,  64,  96 }, {  8,  16,  26 },
+        {232, 242, 252 }, {150, 172, 198 }, {108, 132, 160 },
+        { 96, 196, 255 }, {120, 240, 220 }, {255, 190, 120 },
+        {120, 230, 160 }, 5,
     },
 };
 
@@ -103,7 +135,7 @@ static UiTheme s_th = {
     { 22,  28,  42 }, { 31,  40,  62 }, { 44,  56,  82 }, { 13,  17,  26 },
     {232, 236, 246 }, {156, 160, 178 }, {118, 130, 152 },
     { 77, 163, 255 }, { 64, 224, 208 }, {255, 186,  96 },
-    { 96, 230, 150 },
+    { 96, 230, 150 }, 0,
 };
 
 static int s_theme_cur;      /* index of the live skin, for the baked background */
@@ -115,7 +147,9 @@ int ui_theme_count(void)
 
 const char *ui_theme_name(int index)
 {
-    static const char *const names[] = { "ORIGINAL", "MIDNIGHT", "EMERALD", "SUNSET" };
+    static const char *const names[] = {
+        "SMOKE", "AURORA", "FILM", "NEON", "OBSIDIAN", "COAST"
+    };
 
     if (index < 0 || index >= (int)(sizeof(names)/sizeof(names[0])))
         index = 0;
@@ -278,6 +312,57 @@ static void round_rect_a(SDL_Renderer *r, int x, int y, int w, int h,
         rect_a(r, x + radius - wid, y + h - 1 - i, wid, 1, cr, cg, cb, alpha);
         rect_a(r, x + w - radius,   y + h - 1 - i, wid, 1, cr, cg, cb, alpha);
     }
+}
+
+/* ---- the card -----------------------------------------------------------
+ *
+ * Everything the redesign draws its content on is one shape: a rounded slab
+ * that looks like it has thickness. SDL here has no gradients, no blur and no
+ * shaders, so the depth is assembled the way the chips are - stacked fills.
+ * A wide soft shadow under it, a second tighter one, a vertical fall from a
+ * lit top to a dark foot, a one-pixel light along the top edge and a hairline
+ * of the skin's accent along the bottom corner. `lift` is how far it is off
+ * the surface: 0 rests, 1 is raised (the row under the cursor).
+ *
+ * The shadow is drawn with alpha and grows with the lift, which is what the
+ * eye reads as height - not the fill colour. */
+static void card3d(SDL_Renderer *r, int x, int y, int w, int h, int rad,
+                   int cr, int cg, int cb, int lift)
+{
+    int  k;
+    int  rows = h / 2;
+
+    if (rows > 64)
+        rows = 64;
+
+    /* contact shadow, then a wider ambient one: the pair is the height */
+    round_rect_a(r, x + 2, y + 8 + lift * 6, w, h, rad, 0, 0, 0, 70 + lift * 30);
+    round_rect_a(r, x + 6, y + 14 + lift * 10, w, h, rad, 0, 0, 0, 40 + lift * 24);
+
+    col(r, cr, cg, cb);
+    round_rect(r, x, y, w, h, rad);
+
+    /* the fall: light at the top edge into the panel colour, then the foot
+     * darkening slightly - two runs of single-row fills inside the radius, so
+     * the corners keep their curve */
+    for (k = 0; k < rows; k++) {
+        int a = (rows - k) * 26 / rows;
+
+        if (a > 0)
+            rect_a(r, x + rad, y + 2 + k, w - 2*rad, 1, 236, 244, 255, a);
+    }
+    for (k = 0; k < rows / 2; k++) {
+        int a = k * 40 / (rows / 2);
+
+        if (a > 0)
+            rect_a(r, x + rad, y + h - 2 - k, w - 2*rad, 1, 0, 0, 0, a);
+    }
+
+    /* the lit edge on top and the accent seam under the selected one */
+    rect_a(r, x + rad, y, w - 2*rad, 1, 255, 255, 255, 42 + lift * 18);
+    if (lift)
+        rect_a(r, x + rad, y + h - 1, w - 2*rad, 1, C_ACCENT_R, C_ACCENT_G,
+               C_ACCENT_B, 150);
 }
 
 /* ---------------------------------------------------------------- text ---- */
@@ -1038,9 +1123,113 @@ static void bg_rows(unsigned char *px, int y0, int y1)
                 cb += (sb - cb) * a;
             }
 
+            /* ---- the skin's own structure -------------------------------
+             *
+             * The haze above is the room every skin starts from. What is added
+             * here is what makes each skin a place instead of a tint: curtains
+             * of light, film grain and a leak, a grid with a vanishing point,
+             * stars, or a horizon with a path on the water. Pure arithmetic on
+             * the pixel's own coordinates - no extra noise samples beyond the
+             * two the haze already takes - so a skin change stays a 435 ms
+             * bake on the console and never a per-frame cost. */
+            if (s_th.concept == 1) {
+                /* AURORA: slow curtains hanging from the top edge */
+                double band = bg_fbm(ux * 1.4 + uy * 0.22, uy * 1.9 - 0.10, 77, 3);
+                double wob  = 0.5 + 0.5 * sin((uy * 5.5 + band * 4.2 + ux * 0.7) * 3.14159265);
+                double cur  = wob * wob;
+                double a2   = cur * 0.55 * (1.0 - uy * 0.85);
+
+                cr += ( 34.0 + 70.0 * cur - cr) * a2;
+                cg += (206.0 - 60.0 * uy - cg) * a2;
+                cb += (176.0 + 46.0 * cur - cb) * a2;
+            } else if (s_th.concept == 2) {
+                /* FILM: grain, a warm leak in the top right, soft corners */
+                double leak = exp(-pow((ux - 0.88) / 0.26, 2.0)) *
+                              exp(-pow((uy - 0.10) / 0.34, 2.0));
+                double gr   = bg_rand(x, y, 991) - 0.5;
+
+                cr += 168.0 * leak;
+                cg += 104.0 * leak;
+                cb +=  44.0 * leak;
+                cr += gr * 17.0;
+                cg += gr * 14.0;
+                cb += gr * 11.0;
+            } else if (s_th.concept == 3) {
+                /* NEON: a grid floor running to a vanishing point */
+                const double hy = 0.44;
+
+                if (uy > hy) {
+                    double d   = uy - hy;
+                    double gx  = ux - 0.5;
+                    double pv  = gx / (d + 0.03) * 0.30;
+                    double vl  = fabs(sin(pv * 3.14159265 * 3.0));
+                    double hl  = fabs(sin((1.0 / (d * 7.0 + 0.10)) * 3.14159265));
+                    double g   = 0.0;
+
+                    if (vl < 0.10)
+                        g += (1.0 - vl / 0.10) * 0.55;
+                    if (hl < 0.12)
+                        g += (1.0 - hl / 0.12) * 0.35;
+                    g *= 1.0 - d * 0.8;
+                    if (g > 0.0) {
+                        cr += (255.0 - cr) * g * 0.30;
+                        cg += ( 60.0 - cg) * g * 0.55;
+                        cb += (205.0 - cb) * g * 0.75;
+                    }
+                }
+            } else if (s_th.concept == 4) {
+                /* OBSIDIAN: a star field and almost nothing else */
+                double st = bg_rand(x * 3, y * 3, 313);
+                double top = 1.0 - uy;
+
+                if (st > 0.9982) {
+                    double b = 150.0 + 100.0 * (st - 0.9982) / 0.0018;
+
+                    cr += (b - cr) * 0.85;
+                    cg += (b - cg) * 0.85;
+                    cb += (b * 1.04 - cb) * 0.85;
+                }
+                cr += 26.0 * top * top;
+                cg += 27.0 * top * top;
+                cb += 31.0 * top * top;
+            } else if (s_th.concept == 5) {
+                /* COAST: a horizon, a dark sky, and the light path on water */
+                const double hz = 0.56;
+
+                if (uy < hz) {
+                    double k = (hz - uy) / hz;
+                    double st = bg_rand(x * 2, y * 2, 47);
+
+                    cr *= 1.0 - 0.55 * k;
+                    cg *= 1.0 - 0.45 * k;
+                    cb *= 1.0 - 0.20 * k;
+                    if (st > 0.9988) {
+                        cr += 90.0; cg += 100.0; cb += 120.0;
+                    }
+                } else {
+                    double d   = (uy - hz) / (1.0 - hz);
+                    double lit = exp(-pow((ux - 0.5) / (0.10 + d * 0.30), 2.0));
+                    double rip = 0.5 + 0.5 * sin(uy * 90.0 + ux * 5.0);
+
+                    cr += ( 26.0 + 120.0 * lit * rip - cr) * 0.55;
+                    cg += ( 62.0 + 116.0 * lit * rip - cg) * 0.55;
+                    cb += (104.0 +  90.0 * lit * rip - cb) * 0.55;
+                }
+            }
+
             vx = fabs(ux * 2.0 - 1.0);
             vy = fabs(uy * 2.0 - 1.0);
             vg = 1.0 - (0.42 * vx * vx + 0.30 * vy * vy);
+
+            /* Stage falloff (2026-11-25). The room is lit for the interface,
+             * not the other way round: dark where the type is, lit through the
+             * middle where the content sits, settled at the foot. Baked into
+             * the room, so it costs nothing per frame and shows none of the
+             * banding a drawn scrim did. */
+            if (uy < 0.60)
+                vg *= 0.34 + 0.66 * (uy / 0.60);
+            else if (uy > 0.80)
+                vg *= 1.0 - 0.22 * ((uy - 0.80) / 0.20);
             cr *= vg;
             cg *= vg;
             cb *= vg;
@@ -1226,13 +1415,79 @@ static void bg_piece(SDL_Renderer *r, int x, int y, int w, int h)
     SDL_RenderCopy(r, s_bg_tex, &q, &q);
 }
 
+/* ---- the room, breathing ------------------------------------------------
+ *
+ * Baking the haze is what made it affordable, and it is also what froze it: a
+ * 435 ms bake cannot run at sixty frames a second. So the depth stays baked
+ * and the *motion* is applied to the baked image - the room is copied a few
+ * pixels off its own edge and wrapped, so the whole haze drifts without one
+ * pixel being recomputed. Two strips cover the gap, and a slow light sweep
+ * crosses at a different speed so the two layers never move as one sheet.
+ * Four blits and a dozen thin fills, against a 435 ms bake per frame. */
+static void bg_piece_at(SDL_Renderer *r, int dx, int dy, int w, int h,
+                        int sx, int sy)
+{
+    SDL_Rect src, dst;
+
+    if (w <= 0 || h <= 0)
+        return;
+    src.x = sx; src.y = sy; src.w = w; src.h = h;
+    dst.x = dx; dst.y = dy; dst.w = w; dst.h = h;
+    SDL_RenderCopy(r, s_bg_tex, &src, &dst);
+}
+
+static void bg_drift(SDL_Renderer *r)
+{
+    const int W = s_bg_w, H = s_bg_h;
+    /* UI_TIME_OFFSET lets the host preview render the same room at two
+     * different moments in two separate processes - SDL's clock restarts with
+     * every run, so a before/after pair of stills would otherwise land on the
+     * same phase and prove nothing. Unset, this is exactly the running clock. */
+    static double s_off = -1.0;
+    double t;
+
+    if (s_off < 0.0) {
+        const char *e = getenv("UI_TIME_OFFSET");
+
+        s_off = e ? atof(e) : 0.0;
+    }
+    t = (double)SDL_GetTicks() / 1000.0 + s_off;
+    int dx = (int)((sin(t * 0.11) + 1.0) * 11.0);   /* 0 .. 22 px, never negative */
+    int dy = (int)((cos(t * 0.07) + 1.0) *  6.0);   /* 0 .. 12 px */
+    int i, k;
+
+    if (dx <= 0 && dy <= 0) {
+        SDL_RenderCopy(r, s_bg_tex, NULL, NULL);
+    } else {
+        bg_piece_at(r, dx, dy, W - dx, H - dy, 0, 0);        /* the room   */
+        bg_piece_at(r, 0,  dy, dx,     H - dy, W - dx, 0);   /* left gap   */
+        bg_piece_at(r, dx, 0,  W - dx, dy,     0, H - dy);   /* top gap    */
+        bg_piece_at(r, 0,  0,  dx,     dy,     W - dx, H - dy);
+    }
+
+    /* one thin shaft of light crossing slowly, at a speed of its own */
+    for (i = 0; i < 2; i++) {
+        const double span = (double)DESIGN_W + 700.0;
+        const int    cx = (int)(fmod(t * (16.0 + (double)i * 9.0)
+                                     + (double)i * 760.0, span)) - 350;
+
+        for (k = 0; k < 12; k++) {
+            int a = 6 - k * 6 / 12;
+
+            if (a <= 0)
+                break;
+            rect_a(r, cx - 120 + k * 14, 0, 28, DESIGN_H, 190, 216, 244, a);
+        }
+    }
+}
+
 static void bg_cover(SDL_Renderer *r)
 {
     int edge[2*BG_MAX_HOLES + 2];
     int ne = 0, i, j;
 
     if (s_bg_holes <= 0) {
-        SDL_RenderCopy(r, s_bg_tex, NULL, NULL);
+        bg_drift(r);
         return;
     }
 
@@ -1537,96 +1792,208 @@ static void text_fit(SDL_Renderer *r, int x, int y, int scale, const char *s,
     text_at(r, x, y, scale, buf, cr, cg, cb);
 }
 
+/* ---- the header ----------------------------------------------------------
+ *
+ * Three things and nothing else: what this is, where you are, and what it is
+ * doing. The wordmark gets a raised plate with a lit top edge, the status line
+ * sits under it in the skin's dim tone, the state chip is a glass pill with a
+ * live dot, and the PlayStation emblem keeps the right-hand corner on its own
+ * plaque so it reads as a mark rather than as part of the text.
+ */
 static void header(SDL_Renderer *r, const UiModel *m)
 {
-    /* The emblem is at the right edge of the header, so both lines stop short of
-     * it instead of running under it (v117). Same geometry the emblem uses below. */
-    const int emb_x   = DESIGN_W - SAFE_X - 226 - 62 - EMBLEM_W;
-    const int title_w = emb_x - 24 - SAFE_X;
+    const int hy   = 22, hh = 110;
+    const int embx = DESIGN_W - SAFE_X - EMBLEM_W;
+    const int plq  = embx - 32;               /* the emblem plaque's left edge */
+    const int chipw = 232;
+    const int chipx = plq - 28 - chipw;
+    const int plate_w = chipx - 28 - (SAFE_X - 16);
+    char      line[192];
 
-    text_fit(r, SAFE_X, 44, 3, m->app_title, title_w, C_TEXT);
-    if (m->status && m->status[0])
-        text_fit(r, SAFE_X + 2, 102, 1, m->status, title_w, C_DIM);
+    /* the wordmark's own surface */
+    card3d(r, SAFE_X - 16, hy, plate_w, hh, 26,
+           s_th.plate[0], s_th.plate[1], s_th.plate[2], 0);
+    col(r, C_ACCENT);
+    round_rect(r, SAFE_X, hy + 24, 5, hh - 48, 3);
 
+    text_fit(r, SAFE_X + 24, hy + 16, 3, m->app_title, plate_w - 64, C_TEXT);
+
+    /* the second line: the status message, or a quiet default */
+    snprintf(line, sizeof(line), "%s",
+             (m->status && m->status[0]) ? m->status : "READY");
+    text_fit(r, SAFE_X + 26, hy + 70, 1, line, plate_w - 68, C_DIM);
+
+    /* the emblem, on its plaque, exactly where it was on the old header */
+    card3d(r, plq, hy, EMBLEM_W + 32, hh, 24,
+           s_th.plate[0], s_th.plate[1], s_th.plate[2], 0);
+    /* the artwork carries its own left margin, so it is nudged in to leave a
+     * matching one on the right and sit centered on its plaque */
+    draw_icon_emblem(r, embx - 10, hy + 8);
+
+    /* the state chip: filled dot, word, and the volume or the clock depending
+     * on whether anything is playing - the two numbers a listener looks for */
     {
-        const int cw = 226, ch = 68, cy = 46;
-        const int cx = DESIGN_W - SAFE_X - cw;
+        const int cx = chipx, cy = hy + (hh - 62) / 2;
+        char      value[48];
 
-        /* the clean emblem artwork, top right, where the old mark sat */
-        draw_icon_emblem(r, cx - 62 - EMBLEM_W, 32);
-
-        col(r, m->playing ? 22 : 34, m->playing ? 52 : 38,
-               m->playing ? 56 : 48);
-        round_rect(r, cx, cy, cw, ch, ch/2);
+        card3d(r, cx, cy, chipw, 62, 31,
+               m->playing ? 20 : 26, m->playing ? 36 : 30,
+               m->playing ? 42 : 36, 0);
 
         if (m->playing) {
             col(r, C_ACCENT2);
-            rect(r, cx + 30, cy + 22, 9, 24);
-            rect(r, cx + 46, cy + 12, 9, 44);
-            rect(r, cx + 62, cy + 29, 9, 14);
-            text_at(r, cx + 86, cy + 21, 2, "PLAYING", C_ACCENT2);
+            rect(r, cx + 26, cy + 22, 6, 18);
+            rect(r, cx + 36, cy + 16, 6, 30);
+            rect(r, cx + 46, cy + 26, 6, 10);
         } else {
             col(r, C_FAINT);
-            rect(r, cx + 30, cy + 16, 9, 36);
-            rect(r, cx + 48, cy + 16, 9, 36);
-            text_at(r, cx + 86, cy + 21, 2, "PAUSED", C_DIM);
+            ddisc(r, cx + 32, cy + 31, 6);
+        }
+
+        text_at(r, cx + 62, cy + 12, 1, m->playing ? "PLAYING" : "PAUSED",
+                m->playing ? C_ACCENT2_R : C_FAINT_R,
+                m->playing ? C_ACCENT2_G : C_FAINT_G,
+                m->playing ? C_ACCENT2_B : C_FAINT_B);
+
+        if (m->volume_muted)
+            snprintf(value, sizeof(value), "MUTED");
+        else
+            snprintf(value, sizeof(value), "%+d DB", m->volume_db);
+        text_at(r, cx + 62, cy + 32, 2, value,
+                m->volume_muted ? C_WARN_R : C_TEXT_R,
+                m->volume_muted ? C_WARN_G : C_TEXT_G,
+                m->volume_muted ? C_WARN_B : C_TEXT_B);
+
+        /* the level meter: four segments that fill with the volume */
+        {
+            float f = m->volume_frac;
+            int   k;
+
+            if (f < 0.0f) f = 0.0f;
+            if (f > 1.0f) f = 1.0f;
+            for (k = 0; k < 4; k++) {
+                int on = (f * 4.0f) > (float)k;
+
+                if (on) {
+                    col(r, m->volume_muted ? C_WARN_R : C_ACCENT_R,
+                           m->volume_muted ? C_WARN_G : C_ACCENT_G,
+                           m->volume_muted ? C_WARN_B : C_ACCENT_B);
+                } else {
+                    col(r, C_LINE);
+                }
+                round_rect(r, cx + chipw - 98 + k * 20, cy + 24, 14, 14, 4);
+            }
         }
     }
 
+    /* one hairline, full width, under the whole header */
     col(r, C_LINE);
     rect(r, SAFE_X, 152, DESIGN_W - 2*SAFE_X, 2);
+    rect_a(r, SAFE_X, 154, DESIGN_W - 2*SAFE_X, 1, 255, 255, 255, 14);
 }
 
+/* ---- the library list ----------------------------------------------------
+ *
+ * Right-hand card of the music section: the four shelves, a search field that
+ * is always visible (a search you cannot see is a search nobody uses), the
+ * breadcrumb, and the rows. The numbered column is gone - the row you are on is
+ * the accent bar and the raised card, and a number that says "07" tells nobody
+ * anything on a television.
+ */
 static void track_list(SDL_Renderer *r, const UiModel *m)
 {
-    const int x = SAFE_X, y = 180, w = 1180, h = 760;
+    const int x = 828, y = 180, w = DESIGN_W - SAFE_X - 828, h = 760;
     const int row_h = 74, rows_visible = 7;
-    const int list_x = x + 28, list_w = w - 56;
-    const int first_row_y = y + 158;
+    const int list_x = x + 30, list_w = w - 60;
+    const int first_row_y = y + 178;
     int i, shown = 0, first = 0;
     char head[64];
 
-    col(r, C_PANEL);
-    round_rect(r, x, y, w, h, 22);
+    card3d(r, x, y, w, h, 32, s_th.panel[0], s_th.panel[1], s_th.panel[2], 0);
 
-    /* The four ways into the collection, as tabs across the panel. Square
-     * swaps between them; the underline says which one is showing. */
+    /* the four ways into the collection */
     {
         static const char *const tabs[] = { "TRACKS", "ARTISTS", "ALBUMS", "GENRES" };
-        int t, tx = list_x, ty = y + 30;
+        int t, tx = list_x, ty = y + 28;
 
         for (t = 0; t < 4; t++) {
-            int tw  = text_width(tabs[t], 2) + 36;
+            int tw  = text_width(tabs[t], 2) + 34;
             int sel = (t == m->music_view);
 
-            text_at(r, tx + 18, ty, 2, tabs[t], sel ? C_ACCENT : C_FAINT);
+            /* three conditionals, not one: the commas inside C_ACCENT and
+             * C_FAINT are macro commas, and ?: would split them across the
+             * argument list - the selected tab came out the wrong colour. */
+            text_at(r, tx + 17, ty, 2, tabs[t],
+                    sel ? C_ACCENT_R : C_FAINT_R,
+                    sel ? C_ACCENT_G : C_FAINT_G,
+                    sel ? C_ACCENT_B : C_FAINT_B);
             if (sel) {
                 col(r, C_ACCENT);
-                rect(r, tx + 16, ty + 38, tw - 32, 3);
+                round_rect(r, tx + 15, ty + 36, tw - 30, 3, 2);
             }
-            tx += tw + 12;
+            tx += tw + 10;
         }
         snprintf(head, sizeof(head), "%d", m->track_count);
         text_right(r, list_x + list_w, ty, 2, head, C_DIM);
     }
 
-    /* Where we are: ARTISTS > Daft Punk. Empty at the top of a list. */
+    /* the search field: a rounded well that always shows the query, so the
+     * filtered count below is never a mystery */
+    {
+        const int sy = y + 84, sh = 52;
+        int       on = m->search_active;
+        char      q[96];
+
+        round_rect_a(r, list_x, sy + 6, list_w, sh, sh/2, 0, 0, 0, 90);
+        round_rect_a(r, list_x, sy, list_w, sh, sh/2,
+                     on ? s_th.accent[0] : s_th.line[0],
+                     on ? s_th.accent[1] : s_th.line[1],
+                     on ? s_th.accent[2] : s_th.line[2], on ? 170 : 130);
+        col(r, 14, 18, 27);
+        round_rect(r, list_x + 2, sy + 2, list_w - 4, sh - 4, (sh-4)/2);
+
+        /* magnifier */
+        if (m->search_query && m->search_query[0])
+            col(r, C_ACCENT2);
+        else
+            col(r, C_FAINT);
+        dring(r, list_x + 34, sy + 24, 9, 3);
+        rect(r, list_x + 41, sy + 32, 3, 9);
+        rect(r, list_x + 43, sy + 34, 7, 3);
+
+        if (m->search_query && m->search_query[0])
+            snprintf(q, sizeof(q), "%s", m->search_query);
+        else
+            snprintf(q, sizeof(q), "SEARCH THE LIBRARY");
+        fit_text(q, sizeof(q), q, list_w - 260, 2);
+        text_at(r, list_x + 62, sy + 13, 2, q,
+                (m->search_query && m->search_query[0]) ? C_TEXT_R : C_FAINT_R,
+                (m->search_query && m->search_query[0]) ? C_TEXT_G : C_FAINT_G,
+                (m->search_query && m->search_query[0]) ? C_TEXT_B : C_FAINT_B);
+
+        if (m->track_count == 0 && m->search_query && m->search_query[0])
+            text_right(r, list_x + list_w - 26, sy + 14, 2, "NO MATCH", C_WARN);
+        else
+            text_right(r, list_x + list_w - 26, sy + 14, 2, "OPTIONS", C_DIM);
+    }
+
+    /* where we are: ARTISTS > Daft Punk, or the count of the shelf */
     {
         char crumb[192], cut[192];
 
         if (m->music_level > 0 && m->music_crumb && m->music_crumb[0]) {
             snprintf(crumb, sizeof(crumb), "%s   >   %s", m->music_view_name,
                      m->music_crumb);
-            fit_text(cut, sizeof(cut), crumb, list_w, 2);
-            text_at(r, list_x, y + 100, 2, cut, C_DIM);
+            fit_text(cut, sizeof(cut), crumb, list_w, 1);
+            text_at(r, list_x, y + 148, 1, cut, C_DIM);
         } else {
-            snprintf(crumb, sizeof(crumb), "%s    %d", m->music_view_name,
-                     m->track_count);
-            text_at(r, list_x, y + 100, 2, crumb, C_DIM);
+            snprintf(crumb, sizeof(crumb), "%s   %d ITEM%s",
+                     m->music_view_name, m->track_count,
+                     m->track_count == 1 ? "" : "S");
+            text_at(r, list_x, y + 148, 1, crumb, C_FAINT);
         }
     }
-    col(r, C_LINE);
-    rect(r, list_x, y + 134, list_w, 2);
+    rect_a(r, list_x, y + 168, list_w, 1, 255, 255, 255, 22);
 
     if (m->selected >= rows_visible)
         first = m->selected - rows_visible + 1;
@@ -1640,43 +2007,137 @@ static void track_list(SDL_Renderer *r, const UiModel *m)
         int is_cur = (i == m->current);
         const char *sub = (m->tracks[i].sub && m->tracks[i].sub[0])
                         ? m->tracks[i].sub : (m->tracks[i].is_video ? "VIDEO" : "MP3");
-        /* reserve the right-hand column for the tag and the ON AIR marker, so
-         * a long name is cut short instead of running underneath them */
         int tag_w = text_width(sub, 2);
-        int name_max = list_w - 104 - 28 - tag_w - 28 -
-                       (is_cur ? text_width("ON AIR", 2) + 28 : 0);
-        char name[96], num[16];
+        int name_max = list_w - 60 - 28 - tag_w - 26 -
+                       (is_cur ? text_width("ON AIR", 2) + 24 : 0);
+        char name[96];
 
         if (is_sel) {
-            col(r, C_PANEL_HI);
-            round_rect(r, list_x, ry, list_w, row_h - 12, 14);
+            card3d(r, list_x, ry, list_w, row_h - 12, 18,
+                   s_th.panel_hi[0], s_th.panel_hi[1], s_th.panel_hi[2], 1);
             col(r, C_ACCENT);
-            round_rect(r, list_x, ry, 8, row_h - 12, 4);
+            round_rect(r, list_x + 4, ry + 14, 5, row_h - 40, 3);
         }
 
-        snprintf(num, sizeof(num), "%02d", i + 1);
-        if (is_sel) text_at(r, list_x + 28, ry + 22, 2, num, C_ACCENT);
-        else        text_at(r, list_x + 28, ry + 22, 2, num, C_FAINT);
-
         fit_text(name, sizeof(name), m->tracks[i].name, name_max, 2);
-        if (is_cur)    text_at(r, list_x + 104, ry + 22, 2, name, C_ACCENT2);
-        else if (is_sel) text_at(r, list_x + 104, ry + 22, 2, name, C_TEXT);
-        else           text_at(r, list_x + 104, ry + 22, 2, name,
-                               m->tracks[i].is_category ? C_DIM : C_TEXT);
+        if (is_cur)      text_at(r, list_x + 30, ry + 20, 2, name, C_ACCENT2);
+        else if (is_sel) text_at(r, list_x + 30, ry + 20, 2, name, C_TEXT);
+        else             text_at(r, list_x + 30, ry + 20, 2, name,
+                                m->tracks[i].is_category ? C_DIM_R : C_TEXT_R,
+                                m->tracks[i].is_category ? C_DIM_G : C_TEXT_G,
+                                m->tracks[i].is_category ? C_DIM_B : C_TEXT_B);
 
         if (is_cur)
-            text_right(r, list_x + list_w - 28 - tag_w - 24, ry + 22, 2,
+            text_right(r, list_x + list_w - 26 - tag_w - 20, ry + 20, 2,
                        m->playing ? "ON AIR" : "HELD", C_ACCENT2);
 
-        text_right(r, list_x + list_w - 28, ry + 22, 2, sub,
+        text_right(r, list_x + list_w - 26, ry + 20, 2, sub,
                    is_sel ? C_DIM_R : C_FAINT_R,
                    is_sel ? C_DIM_G : C_FAINT_G,
                    is_sel ? C_DIM_B : C_FAINT_B);
     }
 
-    if (m->track_count == 0)
-        text_center(r, x + w/2, y + h/2 - 30, 2,
-                    "NO MUSIC FOUND - PRESS OPTIONS FOR DRIVES", C_DIM);
+    if (m->track_count == 0) {
+        if (m->search_query && m->search_query[0])
+            text_center(r, x + w/2, y + h/2 + 10, 2,
+                        "NOTHING MATCHES THAT SEARCH", C_DIM);
+        else
+            text_center(r, x + w/2, y + h/2 + 10, 2,
+                        "NO MUSIC FOUND - OPTIONS FOR DRIVES", C_DIM);
+    }
+}
+
+/* ---- the search keyboard -------------------------------------------------
+ *
+ * A pad has no keyboard, so the search is spelled out on one. Ten columns, four
+ * rows: A-Z, 0-9, then SPACE, DELETE, CLEAR and DONE. Up, down, left and right
+ * walk it, Cross presses the key under the cursor, Square deletes a character
+ * and Triangle empties the query. The list behind it filters on every press, so
+ * two letters usually show what you want.
+ */
+#define SEARCH_COLS 10
+#define SEARCH_KEYS 40
+
+static const char *const k_search_key[SEARCH_KEYS] = {
+    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
+    "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T",
+    "U", "V", "W", "X", "Y", "Z", "0", "1", "2", "3",
+    "4", "5", "6", "7", "8", "9", "SPACE", "DEL", "CLEAR", "DONE",
+};
+
+static void search_overlay(SDL_Renderer *r, const UiModel *m)
+{
+    const int kw = 1180, kh = 700;
+    const int x = (DESIGN_W - kw) / 2, y = (DESIGN_H - kh) / 2;
+    const int pad = 44;
+    const int cw = (kw - 2*pad) / SEARCH_COLS;
+    const int rh = 92;
+    const int top = y + 210;
+    int i;
+
+    /* the dim: only the pixels the card does not cover, so it costs what can
+     * be seen and no more */
+    rect_a(r, 0, 0, DESIGN_W, y, 3, 5, 9, 190);
+    rect_a(r, 0, y + kh, DESIGN_W, DESIGN_H - (y + kh), 3, 5, 9, 190);
+    rect_a(r, 0, y, x, kh, 3, 5, 9, 190);
+    rect_a(r, x + kw, y, DESIGN_W - (x + kw), kh, 3, 5, 9, 190);
+
+    card3d(r, x, y, kw, kh, 34, s_th.panel[0], s_th.panel[1], s_th.panel[2], 1);
+    col(r, C_ACCENT);
+    round_rect(r, x + pad, y + 34, 5, 44, 3);
+
+    text_at(r, x + pad + 20, y + 40, 3, "SEARCH", C_TEXT);
+    text_at(r, x + pad, y + 116, 1, "WHAT ARE YOU LOOKING FOR?      CIRCLE CLOSES", C_FAINT);
+
+    /* the query, in a well of its own */
+    {
+        char q[96];
+        int  ny = y + 148, nh = 56;
+
+        col(r, 16, 21, 32);
+        round_rect(r, x + pad, ny, kw - 2*pad, nh, nh/2);
+        col(r, C_ACCENT2);
+        round_rect(r, x + pad + 2, ny + 2, kw - 2*pad - 4, nh - 4, (nh-4)/2);
+        col(r, 16, 21, 32);
+        round_rect(r, x + pad + 4, ny + 4, kw - 2*pad - 8, nh - 8, (nh-8)/2);
+
+        if (m->search_query && m->search_query[0])
+            snprintf(q, sizeof(q), "%s_", m->search_query);
+        else
+            snprintf(q, sizeof(q), "TYPE WITH THE PAD");
+        fit_text(q, sizeof(q), q, kw - 2*pad - 48, 3);
+        text_at(r, x + pad + 24, ny + 10, 3, q,
+                (m->search_query && m->search_query[0]) ? C_TEXT_R : C_FAINT_R,
+                (m->search_query && m->search_query[0]) ? C_TEXT_G : C_FAINT_G,
+                (m->search_query && m->search_query[0]) ? C_TEXT_B : C_FAINT_B);
+    }
+
+    for (i = 0; i < SEARCH_KEYS; i++) {
+        int cix = i % SEARCH_COLS, row = i / SEARCH_COLS;
+        int cx = x + pad + cix * cw;
+        int cy = top + row * rh;
+        int on = (i == m->search_pos);
+        int wide = (i >= SEARCH_KEYS - 4);
+        const char *label = k_search_key[i];
+        int sc = (wide ? strlen(label) > 4 : 0) ? 1 : 2;
+
+        if (on)
+            card3d(r, cx + 3, cy, cw - 6, rh - 12, 14,
+                   s_th.panel_hi[0], s_th.panel_hi[1], s_th.panel_hi[2], 1);
+        else {
+            col(r, 18, 23, 34);
+            round_rect(r, cx + 5, cy + 2, cw - 10, rh - 16, 12);
+            rect_a(r, cx + 16, cy + 2, cw - 32, 1, 255, 255, 255, 22);
+        }
+
+        text_center(r, cx + cw/2, cy + (rh - 12)/2 - (sc == 2 ? 14 : 8), sc, label,
+                    on ? C_ACCENT2_R : C_DIM_R,
+                    on ? C_ACCENT2_G : C_DIM_G,
+                    on ? C_ACCENT2_B : C_DIM_B);
+    }
+
+    text_at(r, x + pad, y + kh - 52, 1,
+            "CROSS TYPE   SQUARE DELETE   TRIANGLE CLEAR   OPTIONS DONE", C_FAINT);
 }
 
 /* ------------------------------------------------------------ visualizer -- */
@@ -1700,103 +2161,155 @@ static void visualizer(SDL_Renderer *r, const UiModel *m, int x, int y, int w, i
     vis_art_draw(r, m, style, x, y, w, h);
 }
 
+/* ---- the deck ------------------------------------------------------------
+ *
+ * The left half of the music section is the player itself, not a status card:
+ * the visualization sits where album art would, the title reads at display
+ * size, and the volume is a real control with its number next to it rather than
+ * a bar hidden at the bottom of a column. This is the idea the section is built
+ * around - music first, list second - and it is why the equalizer lives here.
+ */
 static void now_playing(SDL_Renderer *r, const UiModel *m)
 {
-    const int x = 1308, y = 180, w = DESIGN_W - SAFE_X - 1308, h = 760;
-    const int pad = 36;
+    const int x = SAFE_X, y = 180, w = 700, h = 760;
+    const int pad = 34;
     const int inner_w = w - 2*pad;
-    char line[64], t0[24], t1[24];
+    char line[96], t0[24], t1[24];
 
-    col(r, C_PANEL);
-    round_rect(r, x, y, w, h, 22);
+    card3d(r, x, y, w, h, 34, s_th.panel[0], s_th.panel[1], s_th.panel[2], 0);
 
-    text_at(r, x + pad, y + 40, 2, "NOW PLAYING", C_DIM);
-    col(r, C_LINE);
-    rect(r, x + pad, y + 88, inner_w, 2);
+    /* header of the card: what it is, and whether it is moving */
+    text_at(r, x + pad, y + 30, 1, "NOW PLAYING", C_FAINT);
+    {
+        const char *st = m->playing ? "LIVE" : (m->have_track ? "HELD" : "IDLE");
+        int         tw = text_width(st, 1) + 40;
 
-    if (!m->have_track) {
-        static const UiHint play[] = { { BTN_CROSS, "PLAY" } };
+        round_rect_a(r, x + w - pad - tw, y + 24, tw, 34, 17,
+                     m->playing ? C_ACCENT2_R : C_FAINT_R,
+                     m->playing ? C_ACCENT2_G : C_FAINT_G,
+                     m->playing ? C_ACCENT2_B : C_FAINT_B, 30);
+        if (m->playing) {
+            col(r, C_ACCENT2);
+            ddisc(r, x + w - pad - tw + 18, y + 41, 5);
+        }
+        text_at(r, x + w - pad - tw + 32, y + 33, 1, st,
+                m->playing ? C_ACCENT2_R : C_FAINT_R,
+                m->playing ? C_ACCENT2_G : C_FAINT_G,
+                m->playing ? C_ACCENT2_B : C_FAINT_B);
+    }
+    rect_a(r, x + pad, y + 74, inner_w, 1, 255, 255, 255, 26);
 
-        text_center(r, x + w/2, y + h/2 - 44, 2, "NOTHING SELECTED", C_FAINT);
-        hint_row(r, x + w/2, y + h/2, play, 1);
-    } else {
+    if (!m->have_track && m->track_count == 0) {
+        text_at(r, x + pad, y + 118, 2, "NO MUSIC ON THIS CONSOLE", C_DIM);
+        text_at(r, x + pad, y + 156, 1, "OPEN FILES FROM THE HOME SCREEN TO ADD SOME", C_FAINT);
+        return;
+    }
+
+    /* the visualization: the section's centerpiece, not a strip */
+    {
+        int style = (m->vis_style >= 0 && m->vis_style < VIS_STYLE_COUNT)
+                  ? m->vis_style : VIS_STYLE_SPECTRUM;
+
+        visualizer(r, m, x + pad, y + 92, inner_w, 296);
+
+        /* the look's name, under its plate, and the position in the set */
+        snprintf(line, sizeof(line), "%s", vis_style_name(style));
+        text_at(r, x + pad, y + 402, 2, line, C_ACCENT2);
+        snprintf(line, sizeof(line), "%d / %d", style + 1, VIS_STYLE_COUNT);
+        text_right(r, x + pad + inner_w, y + 404, 1, line, C_FAINT);
+    }
+
+    /* the track */
+    {
         const char *nm = (m->current >= 0 && m->current < m->track_count)
                        ? m->tracks[m->current].name : "";
-        char cut[64];
+        const char *sub = (m->current >= 0 && m->current < m->track_count)
+                        ? m->tracks[m->current].sub : "";
+        char cut[96];
 
-        fit_text(cut, sizeof(cut), nm, inner_w, 3);
-        text_at(r, x + pad, y + 124, 3, cut, C_TEXT);
-
-        if (m->format_note && m->format_note[0]) {
-            char fmt[96];
-            fit_text(fmt, sizeof(fmt), m->format_note, inner_w, 2);
-            text_at(r, x + pad, y + 180, 2, fmt, C_ACCENT);
+        if (!m->have_track) {
+            text_at(r, x + pad, y + 448, 3, "NOTHING SELECTED", C_DIM);
+            text_at(r, x + pad, y + 502, 1, "PRESS CROSS ON A SONG", C_FAINT);
+        } else {
+            fit_text(cut, sizeof(cut), nm, inner_w, 3);
+            text_at(r, x + pad, y + 446, 3, cut, C_TEXT);
+            if (sub && sub[0]) {
+                fit_text(cut, sizeof(cut), sub, inner_w, 2);
+                text_at(r, x + pad, y + 500, 2, cut, C_DIM);
+            }
+            if (m->format_note && m->format_note[0]) {
+                fit_text(cut, sizeof(cut), m->format_note, inner_w, 1);
+                text_at(r, x + pad, y + 534, 1, cut, C_FAINT);
+            }
         }
+    }
 
-        if (m->current >= 0)
-            snprintf(line, sizeof(line), "TRACK %d OF %d", m->current + 1, m->track_count);
-        else
-            snprintf(line, sizeof(line), "--");
-        text_at(r, x + pad, y + 220, 1, line, C_FAINT);
+    /* the position */
+    {
+        float frac = 0.0f;
 
-        {
-            float frac = 0.0f;
-            if (m->duration_sec > 0.5)
-                frac = (float)(m->elapsed_sec / m->duration_sec);
-            fmt_time(t0, sizeof(t0), m->elapsed_sec);
-            fmt_time(t1, sizeof(t1), m->duration_sec);
+        if (m->duration_sec > 0.5)
+            frac = (float)(m->elapsed_sec / m->duration_sec);
+        fmt_time(t0, sizeof(t0), m->elapsed_sec);
+        fmt_time(t1, sizeof(t1), m->duration_sec);
 
-            bar(r, x + pad, y + 268, inner_w, 16, frac, C_ACCENT);
-            text_at(r, x + pad, y + 296, 2, t0, C_DIM);
-            text_right(r, x + pad + inner_w, y + 296, 2, t1, C_DIM);
-        }
+        bar(r, x + pad, y + 566, inner_w, 14, frac, C_ACCENT);
+        text_at(r, x + pad, y + 590, 2, t0, C_DIM);
+        text_right(r, x + pad + inner_w, y + 590, 2, t1, C_DIM);
+    }
 
+    rect_a(r, x + pad, y + 632, inner_w, 1, 255, 255, 255, 22);
+
+    /* the volume: a labelled control with its value, the way a real player
+     * shows it, and the same 1 dB steps the d-pad makes */
+    {
+        char vol[24];
+
+        text_at(r, x + pad, y + 652, 1, "VOLUME", C_FAINT);
         if (m->volume_muted)
-            snprintf(line, sizeof(line), "VOLUME    MUTED");
+            snprintf(vol, sizeof(vol), "MUTED");
         else
-            snprintf(line, sizeof(line), "VOLUME   %+d DB", m->volume_db);
-        text_at(r, x + pad, y + 364, 2, line,
-                m->volume_muted ? C_WARN_R : C_DIM_R,
-                m->volume_muted ? C_WARN_G : C_DIM_G,
-                m->volume_muted ? C_WARN_B : C_DIM_B);
-        bar(r, x + pad, y + 402, inner_w, 18, m->volume_frac,
+            snprintf(vol, sizeof(vol), "%+d DB", m->volume_db);
+        text_right(r, x + pad + inner_w, y + 642, 3, vol,
+                   m->volume_muted ? C_WARN_R : C_TEXT_R,
+                   m->volume_muted ? C_WARN_G : C_TEXT_G,
+                   m->volume_muted ? C_WARN_B : C_TEXT_B);
+
+        bar(r, x + pad, y + 700, inner_w, 20, m->volume_frac,
             m->volume_muted ? C_WARN_R : C_ACCENT2_R,
             m->volume_muted ? C_WARN_G : C_ACCENT2_G,
             m->volume_muted ? C_WARN_B : C_ACCENT2_B);
-
-        {
-            char vis[64];
-            int  style = (m->vis_style >= 0 && m->vis_style < VIS_STYLE_COUNT)
-                       ? m->vis_style : VIS_STYLE_SPECTRUM;
-
-            snprintf(vis, sizeof(vis), "%s   %d/%d", vis_style_name(style),
-                     style + 1, VIS_STYLE_COUNT);
-            text_at(r, x + pad, y + 452, 1, "VISUALIZATION", C_DIM);
-            text_right(r, x + pad + inner_w, y + 448, 2, vis, C_ACCENT2);
-
-            visualizer(r, m, x + pad, y + 500, inner_w, 250);
-        }
     }
+
+    text_at(r, x + pad, y + h - 34, 1,
+            m->volume_muted ? "L3 UNMUTES   LEFT / RIGHT SETS IT"
+                            : "LEFT / RIGHT SETS IT   L3 MUTES", C_FAINT);
 }
 
+/* ---- the hint rows ------------------------------------------------------
+ *
+ * Each screen names only what it can do. The equalizer is a music and video
+ * control, so it is offered where sound is playing and nowhere else; the file
+ * manager offers file actions; the settings screen offers settings actions.
+ * A key that does nothing on the screen you are looking at is worse than no
+ * key at all, because it teaches the wrong map.
+ */
 static void footer(SDL_Renderer *r, const UiModel *m)
 {
-    /* Every key the music section answers is on this row, including the
-     * triggers and L3: a function with no hint is a function nobody finds. */
-    static const UiHint library[] = {
-        { BTN_CROSS,  "PLAY" },
-        { BTN_SQUARE, "VIEW" },
-        { BTN_L1,     "PREV" },
-        { BTN_R1,     "NEXT" },
-        { BTN_L2,     "PAGE UP" },
-        { BTN_R2,     "PAGE DOWN" },
-        { BTN_LEFT,   "VOL-" },
-        { BTN_RIGHT,  "VOL+" },
-        { BTN_TRIANGLE, "VIS" },
-        { BTN_L3,     "FULL" },
-        { BTN_R3,     "EQ" },
-        { BTN_OPTIONS, "FILES" },
-        { BTN_CIRCLE, "BACK" },
+    static const UiHint music[] = {
+        { BTN_CROSS,    "PLAY" },
+        { BTN_SQUARE,   "VIEW" },
+        { BTN_TRIANGLE, "VISUAL" },
+        { BTN_L1,       "PREV" },
+        { BTN_R1,       "NEXT" },
+        { BTN_L2,       "PAGE" },
+        { BTN_R2,       "PAGE" },
+        { BTN_LEFT,     "VOL-" },
+        { BTN_RIGHT,    "VOL+" },
+        { BTN_L3,       "FULL" },
+        { BTN_R3,       "EQ" },
+        { BTN_OPTIONS,  "SEARCH" },
+        { BTN_CIRCLE,   "BACK" },
     };
     /* The file browser shows only file-browser actions: no equalizer, no
      * player keys. Delete asks first; copy, cut and paste work on files. */
@@ -1806,18 +2319,27 @@ static void footer(SDL_Renderer *r, const UiModel *m)
         { BTN_TRIANGLE, "COPY" },
         { BTN_L1,       "CUT" },
         { BTN_R1,       "PG DN" },
-        { BTN_L3,       "RESCAN" },
         { BTN_OPTIONS,  "PASTE" },
-        { BTN_R3,       "EQUALIZER" },
+        { BTN_L3,       "RESCAN" },
         { BTN_CIRCLE,   "BACK" },
+    };
+    static const UiHint settings[] = {
+        { BTN_UP,     "PREV" },
+        { BTN_DOWN,   "NEXT" },
+        { BTN_LEFT,   "CHANGE" },
+        { BTN_RIGHT,  "CHANGE" },
+        { BTN_CIRCLE, "BACK" },
     };
 
     if (m->screen == UI_SCREEN_BROWSER)
         hint_row(r, DESIGN_W/2, DESIGN_H - 112, browser,
                  (int)(sizeof(browser)/sizeof(browser[0])));
+    else if (m->screen == UI_SCREEN_SETTINGS)
+        hint_row(r, DESIGN_W/2, DESIGN_H - 112, settings,
+                 (int)(sizeof(settings)/sizeof(settings[0])));
     else
-        hint_row(r, DESIGN_W/2, DESIGN_H - 112, library,
-                 (int)(sizeof(library)/sizeof(library[0])));
+        hint_row(r, DESIGN_W/2, DESIGN_H - 112, music,
+                 (int)(sizeof(music)/sizeof(music[0])));
 }
 
 /* One panel, one column of rows: drives, then folders, then files. A tag on the
@@ -1831,8 +2353,7 @@ static void browser_screen(SDL_Renderer *r, const UiModel *m)
     const int first_row_y = y + 122;
     int i, shown = 0, first = 0;
 
-    col(r, C_PANEL);
-    round_rect(r, x, y, w, h, 20);
+    card3d(r, x, y, w, h, 26, s_th.panel[0], s_th.panel[1], s_th.panel[2], 0);
 
     text_at(r, list_x, y + 40, 2,
             m->browser_title ? m->browser_title : "DRIVES", C_DIM);
@@ -1891,10 +2412,10 @@ static void browser_screen(SDL_Renderer *r, const UiModel *m)
         tag_w = text_width(tag, 2);
 
         if (is_sel) {
-            col(r, C_PANEL_HI);
-            round_rect(r, list_x, ry, list_w, row_h - 12, 14);
+            card3d(r, list_x, ry, list_w, row_h - 12, 16,
+                   s_th.panel_hi[0], s_th.panel_hi[1], s_th.panel_hi[2], 1);
             col(r, C_ACCENT);
-            round_rect(r, list_x, ry, 8, row_h - 12, 4);
+            round_rect(r, list_x + 4, ry + 14, 5, row_h - 40, 3);
         }
 
         /* a chevron for things that open, a note for things that play */
@@ -2110,6 +2631,95 @@ static void eq_overlay(SDL_Renderer *r, const UiModel *m)
     }
 }
 
+/* ---- settings -----------------------------------------------------------
+ *
+ * Its own screen, reached from the home rail and from OPTIONS on any menu.
+ * Everything that is a preference lives here instead of being scattered over
+ * the screens it affects: the skin, the starting visualization, subtitles, the
+ * volume and mute, the two fit modes, how much the log says, the equalizer, and
+ * a reload of config.ini for anyone editing it over FTP.
+ *
+ * Two cards, because a single column of ten rows at ten feet is a phone list.
+ * Up and down walk the whole list across both cards; left and right change the
+ * value, which is the only gesture that needs explaining and is written on the
+ * screen.
+ */
+static void settings_screen(SDL_Renderer *r, const UiModel *m)
+{
+    const int lx = SAFE_X, ly = 180, lw = 880, lh = 760;
+    const int rx = SAFE_X + lw + 40, ry = 180, rw = DESIGN_W - SAFE_X - rx;
+    const int row_h = 82, pad = 40;
+    const int rows = m->set_count;
+    int i;
+
+    card3d(r, lx, ly, lw, lh, 34, s_th.panel[0], s_th.panel[1], s_th.panel[2], 0);
+    card3d(r, rx, ry, rw, 508, 34, s_th.panel[0], s_th.panel[1], s_th.panel[2], 0);
+
+    col(r, C_ACCENT);
+    round_rect(r, lx + pad, ly + 38, 5, 44, 3);
+    text_at(r, lx + pad + 22, ly + 42, 3, "SETTINGS", C_TEXT);
+    text_at(r, rx + pad, ry + 40, 2, "SYSTEM", C_DIM);
+    text_at(r, rx + pad, ry + 78, 1, "UP / DOWN CHOOSE   LEFT / RIGHT CHANGE", C_FAINT);
+
+    for (i = 0; i < rows; i++) {
+        const int right = (i >= 6);
+        const int cx    = right ? rx : lx;
+        const int cy    = right ? ry : ly;
+        const int cw    = right ? rw : lw;
+        const int n     = right ? i - 6 : i;
+        const int ryy   = cy + 148 + n * row_h;
+        const int sel   = (i == m->set_row);
+        const char *label = (i < rows && m->set_label[i]) ? m->set_label[i] : "";
+        const char *value = (i < rows && m->set_value[i]) ? m->set_value[i] : "";
+        int vw;
+
+        if (sel) {
+            card3d(r, cx + 16, ryy, cw - 32, row_h - 12, 18,
+                   s_th.panel_hi[0], s_th.panel_hi[1], s_th.panel_hi[2], 1);
+            col(r, C_ACCENT);
+            round_rect(r, cx + 24, ryy + 16, 5, row_h - 44, 3);
+        }
+
+        text_at(r, cx + pad + 8, ryy + 22, 2, label,
+                sel ? C_TEXT_R : C_DIM_R,
+                sel ? C_TEXT_G : C_DIM_G,
+                sel ? C_TEXT_B : C_DIM_B);
+
+        vw = text_width(value, 2);
+        text_right(r, cx + cw - pad - (sel ? 26 : 4), ryy + 22, 2, value,
+                   sel ? C_ACCENT2_R : C_TEXT_R,
+                   sel ? C_ACCENT2_G : C_TEXT_G,
+                   sel ? C_ACCENT2_B : C_TEXT_B);
+        if (sel) {
+            text_at(r, cx + cw - pad - vw - 52, ryy + 22, 2, "<", C_ACCENT2);
+            text_at(r, cx + cw - pad + 4, ryy + 22, 2, ">", C_ACCENT2);
+        }
+    }
+
+    /* the note card: what the current skin actually is, since a skin is now a
+     * concept and one word does not say what you are looking at */
+    {
+        const int nx = rx, ny = ry + 532, nw = rw, nh = 228;
+
+        card3d(r, nx, ny, nw, nh, 30, s_th.plate[0], s_th.plate[1], s_th.plate[2], 0);
+        text_at(r, nx + pad, ny + 28, 1, "THIS SKIN", C_FAINT);
+        text_at(r, nx + pad, ny + 52, 3,
+                m->theme_name ? m->theme_name : "SMOKE", C_ACCENT2);
+        text_at(r, nx + pad, ny + 104, 2,
+                m->theme_note ? m->theme_note : "", C_DIM);
+        text_at(r, nx + pad, ny + nh - 38, 1,
+                "EVERY SKIN CHANGES THE ROOM, NOT JUST THE COLOR", C_FAINT);
+    }
+
+    /* the quiet line at the bottom of the left card: what leaving does, and
+     * that nothing here needs a save button */
+    text_at(r, lx + pad, ly + lh - 96, 1,
+            "CHANGES ARE WRITTEN TO CONFIG.INI AS YOU MAKE THEM", C_FAINT);
+    text_at(r, lx + pad, ly + lh - 64, 1,
+            "CIRCLE RETURNS TO THE HOME SCREEN", C_FAINT);
+}
+
+
 /* ------------------------------------------------------------------ api --- */
 
 static void home_screen(SDL_Renderer *r, const UiModel *m);
@@ -2125,15 +2735,20 @@ void ui_draw(SDL_Renderer *r, const UiModel *m, int w, int h)
      * home_screen(), track_list(), now_playing() and browser_screen(). */
     s_bg_holes = 0;
     if (m->screen == UI_SCREEN_HOME) {
-        bg_hole(SAFE_X,          260, 842, 290, 24);
-        bg_hole(SAFE_X + 882,    260, 842, 290, 24);
-        bg_hole(SAFE_X,          590, 842, 290, 24);
-        bg_hole(SAFE_X + 882,    590, 842, 290, 24);
+        /* No holes on this screen any more. The 2x2 grid used to reserve four
+         * openings at its card positions; the rail does not sit on them, and a
+         * screen with holes takes the still-blit path, which is why the smoke
+         * did not move when the drift was first added. The plate covers most
+         * of this room anyway, so the copy it saves is not worth a frozen
+         * background. */
     } else if (m->screen == UI_SCREEN_BROWSER) {
         bg_hole(SAFE_X, 180, DESIGN_W - 2*SAFE_X, 760, 20);
+    } else if (m->screen == UI_SCREEN_SETTINGS) {
+        bg_hole(SAFE_X, 180, 880, 760, 34);
+        bg_hole(SAFE_X + 920, 180, DESIGN_W - 2*SAFE_X - 920, 460, 34);
     } else {
-        bg_hole(SAFE_X, 180, 1180, 760, 22);
-        bg_hole(1308,   180, DESIGN_W - SAFE_X - 1308, 760, 22);
+        bg_hole(SAFE_X, 180, 700, 760, 34);
+        bg_hole(828,     180, DESIGN_W - SAFE_X - 828, 760, 32);
     }
 
     background(r);
@@ -2147,12 +2762,16 @@ void ui_draw(SDL_Renderer *r, const UiModel *m, int w, int h)
     header(r, m);
     if (m->screen == UI_SCREEN_BROWSER) {
         browser_screen(r, m);
+    } else if (m->screen == UI_SCREEN_SETTINGS) {
+        settings_screen(r, m);
     } else {
         track_list(r, m);
         now_playing(r, m);
     }
     footer(r, m);
 
+    if (m->search_active)
+        search_overlay(r, m);
     if (m->eq_open)
         eq_overlay(r, m);
 }
@@ -2628,8 +3247,7 @@ static void media_list_panel(SDL_Renderer *r, const UiModel *m,
     int i, shown = 0, first = 0;
     char head[64];
 
-    col(r, C_PANEL);
-    round_rect(r, x, y, w, h, 22);
+    card3d(r, x, y, w, h, 26, s_th.panel[0], s_th.panel[1], s_th.panel[2], 0);
 
     snprintf(head, sizeof(head), "%s    %d", title, m->track_count);
     text_at(r, list_x, y + 40, 2, head, C_DIM);
@@ -2652,10 +3270,10 @@ static void media_list_panel(SDL_Renderer *r, const UiModel *m,
         char name[96], num[16];
 
         if (is_sel) {
-            col(r, C_PANEL_HI);
-            round_rect(r, list_x, ry, list_w, row_h - 12, 14);
+            card3d(r, list_x, ry, list_w, row_h - 12, 16,
+                   s_th.panel_hi[0], s_th.panel_hi[1], s_th.panel_hi[2], 1);
             col(r, C_ACCENT);
-            round_rect(r, list_x, ry, 8, row_h - 12, 4);
+            round_rect(r, list_x + 4, ry + 14, 5, row_h - 40, 3);
         }
 
         snprintf(num, sizeof(num), "%02d", i + 1);
@@ -2712,126 +3330,492 @@ static SDL_Rect picture_src(const UiModel *m, int tw, int th)
 
 /* --------------------------------------------------------------- home ---- */
 
-static void home_icon(SDL_Renderer *r, int kind, int x, int y, int size, int on)
+/* ======================== the design system ==============================
+ *
+ * 2026-11-25: the second-era look. Everything below this point is authored on
+ * one scale so the whole player reads as one product rather than six screens
+ * built on the same day:
+ *
+ *   grid      12 columns, 96 px margins, 24 px gutters at 1920x1080
+ *   spacing   a 4-based scale; air is a material, not leftover space
+ *   radii     12 / 18 / 26 / 34 - four steps, no bespoke corners
+ *   type      micro 14, label 18, caption 22, body 26, lead 34, h3 44,
+ *             h2 60, display 92 (Inter atlas, one face, size carries rank)
+ *   surfaces  translucent slabs: a fill, a lit top hairline, a soft shadow.
+ *             No 1 px borders - a box drawn around everything is what makes
+ *             an interface look ten years old.
+ *   accent    one colour per skin, used only for the thing you are on and the
+ *             one number that matters. Everything else is white at 100/72/46%.
+ *
+ * The old scale numbers 1..4 above still work (caption/body/title/hero); new
+ * work asks for a pixel size instead, which is what makes a real ramp possible.
+ */
+#define DS_M        96          /* side margin */
+#define GUT         24          /* gutter between tiles */
+#define RD_SM       12
+#define RD_MD       18
+#define RD_LG       26
+#define RD_XL       34
+#define T_MICRO     14
+#define T_LABEL     18
+#define T_CAPTION   22
+#define T_BODY      26
+#define T_LEAD      34
+#define T_H3        44
+#define T_H2        60
+#define T_DISPLAY   92
+
+static int mixc(int a, int b, double t)
 {
-    if (kind == 0) {                    /* music: bars */
-        int i;
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+    return (int)((double)a + ((double)b - (double)a) * t + 0.5);
+}
 
-        for (i = 0; i < 5; i++) {
-            int bh = size * (34 + (i*23) % 56) / 100;
+/* ---- type at an arbitrary size ------------------------------------------ */
 
-            if (on) col(r, C_ACCENT2);
-            else    col(r, C_FAINT);
-            round_rect(r, x + i*size/6, y + size - bh, size/9 + 8, bh, 6);
-        }
-    } else if (kind == 1) {             /* videos: a play mark in a frame */
-        if (on) col(r, C_ACCENT);
-        else    col(r, C_FAINT);
-        round_rect(r, x, y + size/8, size, size*3/4, 14);
-        col(r, 16, 20, 30);
-        round_rect(r, x + 10, y + size/8 + 10, size - 20, size*3/4 - 20, 10);
-        if (on) col(r, C_ACCENT2);
-        else    col(r, C_TEXT);
-        dtri(r, x + size/2, y + size/2, size*38/100, BTN_RIGHT);
-    } else if (kind == 2) {             /* pictures: frame, sun, hills */
-        if (on) col(r, C_ACCENT);
-        else    col(r, C_FAINT);
-        round_rect(r, x, y + size/8, size, size*3/4, 12);
-        col(r, 16, 20, 30);
-        rect(r, x + 9, y + size/8 + 9, size - 18, size*3/4 - 18);
-        if (on) col(r, C_ACCENT2);
-        else    col(r, C_TEXT);
-        ddisc(r, x + size*2/3, y + size*3/8, size/11);
-        rect(r, x + 14, y + size/2 + 6, size/3, size/7);
-        rect(r, x + size/2, y + size/2, size/3, size/4);
-    } else {                            /* browse: a folder */
-        if (on) col(r, C_ACCENT);
-        else    col(r, C_FAINT);
-        round_rect(r, x, y + size/6, size/2, size/6, 6);
-        round_rect(r, x, y + size/4, size, size/2, 10);
-        col(r, 16, 20, 30);
-        round_rect(r, x + 10, y + size/4 + 10, size - 20, size/2 - 20, 6);
+static int text_w_ds(const char *s, int ds)
+{
+#ifdef UI_FONT_ATLAS
+    int w = ui_font_width(&ui_font, px(ds), s);
+
+    return s_scale > 0.0 ? (int)((double)w / s_scale + 0.5) : w;
+#else
+    int n = 0, sc = ds / 16;
+
+    if (sc < 1) sc = 1;
+    for (; s && *s; s++)
+        n++;
+    return n * (8*sc + sc/2);
+#endif
+}
+
+static void text_ds(SDL_Renderer *r, int x, int y, int ds, const char *s,
+                    int cr, int cg, int cb)
+{
+    if (!s || !s[0])
+        return;
+#ifdef UI_FONT_ATLAS
+    ui_font_draw(r, &ui_font, px(x), py(y), px(ds), s, cr, cg, cb);
+#else
+    {
+        int sc = ds / 16;
+
+        if (sc < 1) sc = 1;
+        col(r, cr, cg, cb);
+        draw_text(r, x, y, sc, s);
+    }
+#endif
+}
+
+static void text_ds_right(SDL_Renderer *r, int right_x, int y, int ds,
+                          const char *s, int cr, int cg, int cb)
+{
+    text_ds(r, right_x - text_w_ds(s, ds), y, ds, s, cr, cg, cb);
+}
+
+/* Shortened to fit, measured with the atlas - never estimated. */
+static void fit_ds(char *dst, size_t dstsz, const char *src, int max_px, int ds)
+{
+    size_t n, cut;
+
+    if (!src) {
+        dst[0] = '\0';
+        return;
+    }
+    if (dstsz < 8) {
+        snprintf(dst, dstsz, "%s", src);
+        return;
+    }
+    n = strlen(src);
+    if (n > dstsz - 1)
+        n = dstsz - 1;
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+    if (text_w_ds(dst, ds) <= max_px)
+        return;
+
+    for (cut = n; cut > 1; cut--) {
+        dst[cut] = '\0';
+        if (cut + 3 >= dstsz)
+            continue;
+        memcpy(dst + cut, "...", 4);
+        if (text_w_ds(dst, ds) <= max_px)
+            return;
+    }
+    snprintf(dst, dstsz, "...");
+}
+
+/* ---- letterspaced small caps, for labels that are not read as sentences -- */
+
+#define TRACK_RATIO 0.14
+
+static void label_at(SDL_Renderer *r, int x, int y, int ds, const char *s,
+                     int cr, int cg, int cb)
+{
+    int tr = (int)(ds * TRACK_RATIO + 0.5);
+
+    for (; s && *s; s++) {
+        char one[2] = { *s, 0 };
+
+        text_ds(r, x, y, ds, one, cr, cg, cb);
+        x += text_w_ds(one, ds) + tr;
     }
 }
 
+/* ---- surfaces ------------------------------------------------------------
+ *
+ * A slab is: a soft shadow under it (two, so the edge is real falloff), a
+ * translucent fill, and one lit hairline along the top inside edge. That is
+ * the whole material. Depth comes from the shadow and the light, not from a
+ * border, which is why nothing here draws a 1 px outline.
+ */
+static void slab_shadow(SDL_Renderer *r, int x, int y, int w, int h, int rad,
+                        int a)
+{
+    round_rect_a(r, x - 2, y + 12, w + 4, h, rad, 0, 0, 0, a / 2);
+    round_rect_a(r, x,     y + 4,  w,     h, rad, 0, 0, 0, a);
+}
+
+static void slab(SDL_Renderer *r, int x, int y, int w, int h, int rad,
+                 int cr, int cg, int cb, int alpha, int lit)
+{
+    round_rect_a(r, x, y, w, h, rad, cr, cg, cb, alpha);
+    if (lit > 0) {
+        int in = rad;
+
+        round_rect_a(r, x + in, y + 1, w - 2*in, 1, 0, 255, 255, 255, lit);
+    }
+}
+
+/* An accent aura, four nested rounded rects of decaying alpha. Sixteen draws
+ * for a halo that reads as light rather than as a second panel. */
+static void aura(SDL_Renderer *r, int x, int y, int w, int h, int rad,
+                 int cr, int cg, int cb, int a)
+{
+    int k;
+
+    for (k = 4; k >= 1; k--)
+        round_rect_a(r, x - 4*k, y - 4*k, w + 8*k, h + 8*k, rad + 4*k,
+                     cr, cg, cb, a / k);
+}
+
+static void hairline(SDL_Renderer *r, int x, int y, int w, int alpha)
+{
+    rect_a(r, x, y, w, 1, 255, 255, 255, alpha);
+}
+
+/* ---- compact hint tokens ------------------------------------------------
+ *
+ * The chrome disc with its brushed face was the right call over a video and
+ * the wrong one on a still screen: four of them in a row read as hardware.
+ * Here the mark is a thin ring with the glyph inside and the word beside it,
+ * one line, no plates.
+ */
+static int label_w(const char *s, int ds)
+{
+    int tr = (int)(ds * TRACK_RATIO + 0.5), w = 0;
+
+    for (; s && *s; s++) {
+        char one[2] = { *s, 0 };
+
+        w += text_w_ds(one, ds) + tr;
+    }
+    return w > 0 ? w - tr : 0;
+}
+
+static void hint_token(SDL_Renderer *r, int x, int y, int btn, const char *label)
+{
+    const int d = 34;
+    const int cx = x + d/2, cy = y + d/2;
+
+    col(r, 9, 13, 21);
+    ddisc(r, cx, cy, d/2);
+    col(r, 255, 255, 255);
+    dring(r, cx, cy, d/2, 1);
+    col(r, 236, 244, 255);
+    chip_mark(r, cx, cy, btn);
+
+    label_at(r, x + d + 12, cy - T_MICRO/2 - 2, T_MICRO, label,
+             C_DIM_R, C_DIM_G, C_DIM_B);
+}
+
+/* ---- glyphs --------------------------------------------------------------
+ *
+ * Five marks, one weight. Everything is stroke at size/14 with round joins so
+ * a 72 px tile icon and an 18 px inline mark read the same, and nothing is a
+ * filled square with a second square cut out of it.
+ */
+static void glyph_box(SDL_Renderer *r, int x, int y, int w, int h, int sw)
+{
+    int hw = sw / 2;
+
+    dline(r, x + hw, y + hw, x + w - hw, y + hw, sw);
+    dline(r, x + hw, y + h - hw, x + w - hw, y + h - hw, sw);
+    dline(r, x + hw, y + hw, x + hw, y + h - hw, sw);
+    dline(r, x + w - hw, y + hw, x + w - hw, y + h - hw, sw);
+}
+
+static void home_glyph(SDL_Renderer *r, int kind, int gx, int gy, int size,
+                       int cr, int cg, int cb)
+{
+    const int sw = size / 14 > 2 ? size / 14 : 2;
+
+    col(r, cr, cg, cb);
+
+    if (kind == 0) {                     /* music: a meter, not five bricks */
+        static const int hgt[5] = { 46, 72, 100, 66, 34 };
+        int i, bw = size / 9, gap = (size - 5*(size/9)) / 4;
+
+        for (i = 0; i < 5; i++) {
+            int bh = size * hgt[i] / 100;
+
+            round_rect(r, gx + i*(bw + gap), gy + size - bh, bw, bh, bw/2);
+        }
+    } else if (kind == 1) {              /* videos: a screen and a play */
+        int bx = gx, by = gy + size/9, bw = size, bh = size*7/9;
+
+        glyph_box(r, bx, by, bw, bh, sw);
+        dtri(r, gx + size/2, gy + size/2, size*30/100, BTN_RIGHT);
+    } else if (kind == 2) {              /* pictures: a frame, a sun, ridges */
+        int bx = gx, by = gy + size/9, bw = size, bh = size*7/9;
+
+        glyph_box(r, bx, by, bw, bh, sw);
+        ddisc(r, bx + bw*36/100, by + bh*28/100, size/10);
+        dline(r, bx + bw*8/100, by + bh*84/100, bx + bw*40/100, by + bh*50/100, sw);
+        dline(r, bx + bw*40/100, by + bh*50/100, bx + bw*62/100, by + bh*84/100, sw);
+        dline(r, bx + bw*56/100, by + bh*84/100, bx + bw*74/100, by + bh*66/100, sw);
+        dline(r, bx + bw*74/100, by + bh*66/100, bx + bw*92/100, by + bh*84/100, sw);
+    } else if (kind == 3) {              /* browse: a folder */
+        round_rect(r, gx, gy + size*12/100, size*46/100, size*18/100, size/16);
+        round_rect(r, gx, gy + size*26/100, size, size*58/100, size/10);
+    } else {                             /* settings: three addressed sliders */
+        static const int at[3] = { 62, 30, 48 };
+        int i;
+
+        for (i = 0; i < 3; i++) {
+            int ly = gy + size*22/100 + i*size*28/100;
+            int kx = gx + size*at[i]/100;
+
+            rect(r, gx, ly, size, sw);
+            ddisc(r, kx, ly + sw/2, size/11);
+        }
+    }
+}
+
+/* A vertical fall inside a slab: lit along the top, shadowed at the foot, in
+ * four-pixel bands inside the corner radius. This is the whole difference
+ * between a shape that is painted and a shape that has a surface. */
+static void slab_fall(SDL_Renderer *r, int x, int y, int w, int h, int rad,
+                      int hi, int lo)
+{
+    int rows = h - 2*rad, k;
+
+    if (rows < 8)
+        return;
+    /* One row at a time, on a curve instead of in four-pixel steps: the steps
+     * drew visible bands across every panel, and the widest one - the light at
+     * the top of a door - read as a grey plate the glyph was sitting on rather
+     * than light falling on glass. */
+    for (k = 0; k < rows; k++) {
+        int t = k * 100 / rows;          /* 0 at the top edge, 100 at the foot */
+        int a;
+
+        if (t < 34)
+            a = hi * (34 - t) * (34 - t) / (34 * 34);   /* light at the lip only */
+        else
+            a = -lo * (t - 34) / 66;
+        if (a > 0) {
+            round_rect_a(r, x + rad, y + rad + k, w - 2*rad, 1,
+                         0, 255, 255, 255, a);
+        } else if (a < 0) {
+            round_rect_a(r, x + rad, y + rad + k, w - 2*rad, 1,
+                         0, 0, 0, 0, -a);
+        }
+    }
+}
+
+/* One destination: a slab you can see is lit, a glyph, a name, a count. The
+ * selected one is raised, tinted by the accent, auras, and owns the only
+ * accent underline on the screen. */
+static void home_tile(SDL_Renderer *r, int x, int y, int w, int h, int kind,
+                      int on, const char *name, const char *count)
+{
+    if (on)
+        aura(r, x, y, w, h, RD_LG,
+             (C_ACCENT_R + C_ACCENT2_R) / 2,
+             (C_ACCENT_G + C_ACCENT2_G) / 2,
+             (C_ACCENT_B + C_ACCENT2_B) / 2, 44);
+    slab_shadow(r, x, y, w, h, RD_LG, on ? 132 : 88);
+
+    if (on) {
+        slab(r, x, y, w, h, RD_LG,
+             mixc(s_th.panel[0], C_ACCENT_R, 0.14),
+             mixc(s_th.panel[1], C_ACCENT_G, 0.14),
+             mixc(s_th.panel[2], C_ACCENT_B, 0.14), 246, 62);
+    } else {
+        slab(r, x, y, w, h, RD_LG,
+             mixc(s_th.panel[0], 0, 0.22),
+             mixc(s_th.panel[1], 0, 0.22),
+             mixc(s_th.panel[2], 0, 0.22), 224, 22);
+    }
+    slab_fall(r, x, y, w, h, RD_LG, on ? 20 : 9, on ? 20 : 26);
+
+    home_glyph(r, kind, x + 34, y + 38, 72,
+               on ? C_ACCENT_R : C_FAINT_R,
+               on ? C_ACCENT_G : C_FAINT_G,
+               on ? C_ACCENT_B : C_FAINT_B);
+
+    text_ds(r, x + 34, y + h - 92, T_BODY, name,
+            on ? C_TEXT_R : 205, on ? C_TEXT_G : 212, on ? C_TEXT_B : 228);
+    label_at(r, x + 34, y + h - 50, T_MICRO, count, C_FAINT_R, C_FAINT_G, C_FAINT_B);
+
+    if (on) {
+        col(r, C_ACCENT);
+        round_rect(r, x + 34, y + h - 16, w - 68, 3, 2);
+    }
+}
+
+/* ---- home ---------------------------------------------------------------
+ * The room, what is playing, and five doors. No rail, no index numbers, no
+ * panel around the panel: the type carries the rank, air does the separating,
+ * and the only accent on the screen is the door you are on.
+ */
 static void home_screen(SDL_Renderer *r, const UiModel *m)
 {
-    const int cw = 842, ch = 290, gap = 40;
-    const int x0 = SAFE_X, y0 = 260;
-    const int x1 = SAFE_X + cw + gap, y1 = y0 + ch + gap;
-    static const char *const k_title[4] = {
-        "MUSIC", "VIDEOS", "PICTURES", "BROWSE FILES"
+    static const char *const k_name[5] = {
+        "MUSIC", "VIDEOS", "PICTURES", "BROWSE FILES", "SETTINGS"
     };
-    static const char *const k_note[4] = {
-        "SONGS, WITH VISUALIZATIONS AND THE EQUALIZER",
-        "MP4 AND MOV, WITH A LIVE PREVIEW ON THE RIGHT",
-        "JPEG, PNG AND BMP, WITH ZOOM AND PICTURE SETTINGS",
-        "EVERY DRIVE AND FOLDER ON THE CONSOLE",
+    static const char *const k_note[5] = {
+        "Songs, with visualizations, search and the equalizer.",
+        "MP4 and MOV, with a live preview beside the list.",
+        "JPEG, PNG and BMP, with zoom and color controls.",
+        "Every drive and folder on this console.",
+        "Skin, sound, subtitles and defaults.",
     };
-    int counts[4];
-    int i;
+    const int sel  = (m->home_selected < 0 ? 0 : m->home_selected) % 5;
+    const int have = m->have_track && m->current >= 0 &&
+                     m->current < m->track_count && m->tracks;
+    const int tw   = (DESIGN_W - 2*DS_M - 4*GUT) / 5;
+    const int th   = 252;
+    const int ty   = 540;
+    char      line[192], cut[128];
 
-    header(r, m);
-    text_at(r, SAFE_X, 190, 4, "WHAT DO YOU WANT TO PLAY?", C_TEXT);
+    /* ---------- top bar: the wordmark, then the two live numbers ---------- */
+    label_at(r, DS_M, 58, T_LABEL, "ULTIMATE MEDIA PLAYER",
+             C_DIM_R, C_DIM_G, C_DIM_B);
+    {
+        char vol[32];
+        int  vw, sx;
 
-    counts[0] = m->music_count;
-    counts[1] = m->video_count;
-    counts[2] = m->picture_count;
-    counts[3] = -1;
-
-    for (i = 0; i < 4; i++) {
-        int  x = (i & 1) ? x1 : x0;
-        int  y = (i >> 1) ? y1 : y0;
-        int  sel = (i == m->home_selected);
-        char count[64];
-
-        if (sel) col(r, C_PANEL_HI);
-        else     col(r, C_PANEL);
-        round_rect(r, x, y, cw, ch, 24);
-        if (sel) {
-            col(r, C_ACCENT);
-            round_rect(r, x, y, cw, 6, 3);
-        }
-        home_icon(r, i, x + cw - 180, y + 78, 120, sel);
-
-        text_at(r, x + 48, y + 48, 4, k_title[i],
-                sel ? C_TEXT_R : C_DIM_R,
-                sel ? C_TEXT_G : C_DIM_G,
-                sel ? C_TEXT_B : C_DIM_B);
-        text_at(r, x + 48, y + 122, 1, k_note[i], C_FAINT);
-
-        if (counts[i] >= 0)
-            snprintf(count, sizeof(count), "%d ITEM%s", counts[i],
-                     counts[i] == 1 ? "" : "S");
+        if (m->volume_muted)
+            snprintf(vol, sizeof(vol), "MUTED");
         else
-            snprintf(count, sizeof(count), "DRIVES AND FOLDERS");
-        text_at(r, x + 48, y + 196, 2, count,
-                sel ? C_ACCENT2_R : C_FAINT_R,
-                sel ? C_ACCENT2_G : C_FAINT_G,
-                sel ? C_ACCENT2_B : C_FAINT_B);
+            snprintf(vol, sizeof(vol), "%+d dB", m->volume_db);
+        text_ds_right(r, DESIGN_W - DS_M, 56, T_LABEL, vol,
+                      m->volume_muted ? C_WARN_R : C_ACCENT2_R,
+                      m->volume_muted ? C_WARN_G : C_ACCENT2_G,
+                      m->volume_muted ? C_WARN_B : C_ACCENT2_B);
+        vw = text_w_ds(vol, T_LABEL);
+        sx = DESIGN_W - DS_M - vw - 30;
+        text_ds_right(r, sx, 56, T_LABEL, m->theme_name ? m->theme_name : "SMOKE",
+                      C_DIM_R, C_DIM_G, C_DIM_B);
+        rect_a(r, sx - 28, 60, 1, 16, 255, 255, 255, 34);
+    }
+    hairline(r, DS_M, 104, DESIGN_W - 2*DS_M, 20);
+
+    /* ---------- the stage: what you are about to play, or where you are ---- */
+    label_at(r, DS_M, 168, T_MICRO,
+             have ? (m->playing ? "NOW PLAYING" : "PAUSED") : "READY",
+             C_ACCENT2_R, C_ACCENT2_G, C_ACCENT2_B);
+
+    fit_ds(cut, sizeof(cut), have ? m->tracks[m->current].name : k_name[sel],
+           DESIGN_W - 2*DS_M - 520, T_DISPLAY);
+    text_ds(r, DS_M, 194, T_DISPLAY, cut, C_TEXT_R, C_TEXT_G, C_TEXT_B);
+
+    if (have) {
+        const char *sub = m->tracks[m->current].sub;
+
+        snprintf(line, sizeof(line), "%s%s%s",
+                 (sub && sub[0]) ? sub : "",
+                 (sub && sub[0] && m->format_note && m->format_note[0]) ? "   ·   " : "",
+                 (m->format_note && m->format_note[0]) ? m->format_note : "");
+    } else {
+        snprintf(line, sizeof(line), "%s", k_note[sel]);
+    }
+    text_ds(r, DS_M, 312, T_CAPTION, line,
+            (C_DIM_R + C_TEXT_R) / 2, (C_DIM_G + C_TEXT_G) / 2,
+            (C_DIM_B + C_TEXT_B) / 2);
+
+    if (have) {
+        const int pw   = 1040;
+        const int py0  = 380;
+        double    frac = 0.0;
+        char      pos[24], dur[24];
+
+        if (m->duration_sec > 0.0) {
+            frac = m->elapsed_sec / m->duration_sec;
+            if (frac < 0.0) frac = 0.0;
+            if (frac > 1.0) frac = 1.0;
+        }
+        rect_a(r, DS_M, py0, pw, 4, 255, 255, 255, 30);
+        if (frac > 0.0) {
+            col(r, C_ACCENT);
+            round_rect(r, DS_M, py0, (int)((double)pw * frac), 4, 2);
+            ddisc(r, DS_M + (int)((double)pw * frac), py0 + 1, 4);
+        }
+        fmt_time(pos, sizeof(pos), m->elapsed_sec);
+        fmt_time(dur, sizeof(dur), m->duration_sec);
+        text_ds(r, DS_M, py0 + 18, T_LABEL, pos, C_FAINT_R, C_FAINT_G, C_FAINT_B);
+        text_ds_right(r, DS_M + pw, py0 + 18, T_LABEL, dur,
+                      C_FAINT_R, C_FAINT_G, C_FAINT_B);
+    } else {
+        snprintf(line, sizeof(line), "%d songs   ·   %d videos   ·   %d pictures",
+                 m->music_count, m->video_count, m->picture_count);
+        text_ds(r, DS_M, 372, T_LABEL, line, C_FAINT_R, C_FAINT_G, C_FAINT_B);
     }
 
-    /* which skin is on, right under the headline */
+    /* ---------- the five doors -------------------------------------------- */
     {
-        char theme[64];
+        int i;
 
-        snprintf(theme, sizeof(theme), "THEME   %s",
-                 m->theme_name ? m->theme_name : "ORIGINAL");
-        text_right(r, DESIGN_W - SAFE_X, 196, 2, theme, C_ACCENT2);
+        for (i = 0; i < 5; i++) {
+            char count[48];
+
+            if (i == 0)
+                snprintf(count, sizeof(count), "%d SONGS", m->music_count);
+            else if (i == 1)
+                snprintf(count, sizeof(count), "%d VIDEOS", m->video_count);
+            else if (i == 2)
+                snprintf(count, sizeof(count), "%d PICTURES", m->picture_count);
+            else if (i == 3)
+                snprintf(count, sizeof(count), "%s", "DRIVES AND FOLDERS");
+            else
+                snprintf(count, sizeof(count), "%s", "PREFERENCES");
+
+            home_tile(r, DS_M + i*(tw + GUT), ty, tw, th, i, i == sel,
+                      k_name[i], count);
+        }
     }
 
+    /* ---------- the one line of instruction at the foot -------------------- */
     {
-        static const UiHint home_hints[] = {
-            { BTN_CROSS,  "OPEN" },
-            { BTN_SQUARE, "THEME" },
-            { BTN_OPTIONS, "FILES" },
-            { BTN_L3,     "MUTE" },
-            { BTN_R3,     "EQUALIZER" },
+        static const struct { int btn; const char *label; } h[4] = {
+            { BTN_CROSS,   "OPEN" },
+            { BTN_OPTIONS, "SETTINGS" },
+            { BTN_SQUARE,  "NEXT SKIN" },
+            { BTN_L3,      "MUTE" },
         };
+        int x = DS_M, k;
 
-        hint_row(r, DESIGN_W/2, DESIGN_H - 112, home_hints,
-                 (int)(sizeof(home_hints)/sizeof(home_hints[0])));
+        for (k = 0; k < 4; k++) {
+            hint_token(r, x, 884, h[k].btn, h[k].label);
+            x += 34 + 12 + label_w(h[k].label, T_MICRO) + 38;
+        }
     }
+
+    /* the mark, where a maker's signature goes: foot of the frame, right */
+    draw_icon_emblem(r, DESIGN_W - DS_M - EMBLEM_W, 916);
 }
 
 /* -------------------------------------------------------------- videos --- */
@@ -2858,8 +3842,7 @@ void ui_draw_video_section(SDL_Renderer *r, SDL_Texture *frame, int fw, int fh,
     media_list_panel(r, m, "VIDEOS", "VIDEO",
                      m->playing ? "ON AIR" : "PAUSED");
 
-    col(r, C_PANEL);
-    round_rect(r, vx, vy, vw, vh, 22);
+    card3d(r, vx, vy, vw, vh, 26, s_th.panel[0], s_th.panel[1], s_th.panel[2], 0);
 
     /* the preview viewer: a black plate, then the frame inside it */
     col(r, 5, 7, 11);
@@ -2911,7 +3894,7 @@ void ui_draw_video_section(SDL_Renderer *r, SDL_Texture *frame, int fw, int fh,
             { BTN_R1,       "NEXT" },
             { BTN_TRIANGLE, "FULL SCREEN" },
             { BTN_OPTIONS,  "SETTINGS" },
-            { BTN_R3,       "EQUALIZER" },
+            { BTN_R3,       "EQ" },
             { BTN_CIRCLE,   "BACK" },
         };
 
@@ -3123,8 +4106,7 @@ void ui_draw_pictures(SDL_Renderer *r, SDL_Texture *tex, int tw, int th,
     header(r, m);
     media_list_panel(r, m, "PICTURES", "IMAGE", "VIEWING");
 
-    col(r, C_PANEL);
-    round_rect(r, vx, vy, vw, vh, 22);
+    card3d(r, vx, vy, vw, vh, 26, s_th.panel[0], s_th.panel[1], s_th.panel[2], 0);
     col(r, 5, 7, 11);
     rect(r, ix, iy, iw, ih);
 

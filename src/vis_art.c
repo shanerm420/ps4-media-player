@@ -15,6 +15,8 @@
 #include <SDL2/SDL.h>
 
 #include "vis_art.h"
+#include <stdlib.h>
+#include "gpu_vis.h"
 #include "appcfg.h"
 #include "applog.h"
 #include "ps_mark.h"
@@ -847,49 +849,186 @@ static void star_shape(Cv *c, double cx, double cy, double rad, double rot,
 
 static SDL_Texture *s_tex;
 static int          s_tex_w, s_tex_h;
+#ifdef VIS_SOFT_UPSCALE
+static unsigned char *s_up;
+static size_t         s_up_cap;
+#endif
 
-static unsigned long long s_a3_rv_calls, s_a3_rv_bakes, s_a3_rv_alloc_fail;
-static unsigned long long s_a3_rv_bytes;
-static unsigned long long s_a3_pr_calls, s_a3_pr_upscales, s_a3_pr_uploads;
-static unsigned long long s_a3_pr_texcreates, s_a3_pr_copies;
-static unsigned long long s_a3_pr_upscale_bytes, s_a3_pr_upload_bytes;
-static unsigned long long s_a3_frames;
-static int s_a3_style = -1;
-static int s_a3_step = -1;
+/* Bilinear expansion of the canvas to the frame.
+ *
+ * The reduced-quality path paints at half or a third of the frame, and a
+ * nearest-neighbour expansion of that is exactly what "boxy" means: each
+ * painted pixel becomes a hard square four or nine times its size, so every
+ * curve turns into a staircase and every glow into a grid. This filter reads
+ * four neighbours and blends, which is what the eye expects, and it is done
+ * separably - one vertical blend of two source rows per output row, then a
+ * horizontal pass - so the cost stays around the price of the copy it
+ * replaces. */
+static int  *s_col0, *s_col1, *s_colf;
+static int   s_col_w, s_col_sw;
+static unsigned char *s_vrow;
+static size_t s_vrow_cap;
 
+static void col_table(int w, int sw)
+{
+    int x;
+
+    if (s_col_w == w && s_col_sw == sw && s_col0)
+        return;
+    free(s_col0);
+    free(s_col1);
+    free(s_colf);
+    s_col0 = (int *)malloc(sizeof(int) * (size_t)w);
+    s_col1 = (int *)malloc(sizeof(int) * (size_t)w);
+    s_colf = (int *)malloc(sizeof(int) * (size_t)w);
+    s_col_w = s_col0 && s_col1 && s_colf ? w : 0;
+    s_col_sw = sw;
+    if (!s_col_w)
+        return;
+    for (x = 0; x < w; x++) {
+        long num = (long)x * sw;
+
+        s_col0[x] = (int)(num / w);
+        s_col1[x] = s_col0[x] + 1 < sw ? s_col0[x] + 1 : sw - 1;
+        s_colf[x] = (int)(((num % w) * 256) / w);
+    }
+}
+
+#ifdef VIS_SOFT_UPSCALE
+static int upscale_bilinear(const Cv *src, unsigned char *dst, int w, int h)
+{
+    int x, y, c, sw = src->w, sh = src->h;
+    size_t need = (size_t)sw * 3;
+
+    if (!src->p || sw < 1 || sh < 1)
+        return 0;
+    col_table(w, sw);
+    if (!s_col_w)
+        return 0;
+    if (!s_vrow || s_vrow_cap < need) {
+        free(s_vrow);
+        s_vrow = (unsigned char *)malloc(need);
+        s_vrow_cap = s_vrow ? need : 0;
+    }
+    if (!s_vrow)
+        return 0;
+
+    for (y = 0; y < h; y++) {
+        long   num = (long)y * sh;
+        int    sy0 = (int)(num / h);
+        int    sy1 = sy0 + 1 < sh ? sy0 + 1 : sh - 1;
+        int    fy  = (int)(((num % h) * 256) / h);
+        const unsigned char *ra = src->p + (size_t)sy0 * (size_t)sw * 4;
+        const unsigned char *rb = src->p + (size_t)sy1 * (size_t)sw * 4;
+        unsigned char *drow = dst + (size_t)y * (size_t)w * 4;
+
+        for (x = 0; x < sw; x++) {
+            for (c = 0; c < 3; c++) {
+                int a = ra[x * 4 + c], b = rb[x * 4 + c];
+
+                s_vrow[x * 3 + c] = (unsigned char)(a + (((b - a) * fy) >> 8));
+            }
+        }
+        for (x = 0; x < w; x++) {
+            int    i0 = s_col0[x] * 3, i1 = s_col1[x] * 3;
+            int    f  = s_colf[x];
+
+            drow[x * 4 + 0] = (unsigned char)(s_vrow[i0] + (((s_vrow[i1] - s_vrow[i0]) * f) >> 8));
+            drow[x * 4 + 1] = (unsigned char)(s_vrow[i0 + 1] + (((s_vrow[i1 + 1] - s_vrow[i0 + 1]) * f) >> 8));
+            drow[x * 4 + 2] = (unsigned char)(s_vrow[i0 + 2] + (((s_vrow[i1 + 2] - s_vrow[i0 + 2]) * f) >> 8));
+            drow[x * 4 + 3] = 255;
+        }
+    }
+    return 1;
+}
+#endif /* VIS_SOFT_UPSCALE */
+
+/* the present-time expansion buffer (see art_present) */
+static unsigned char *s_sc;
+static size_t  s_sc_cap;
+static int    *s_xmap;
+static int     s_xmap_w, s_xmap_d;
+
+/* Puts the canvas on screen at the frame's own pixel size.
+ *
+ * When the canvas is smaller than the frame - which is what happens when the
+ * quality step below has reduced it - the expansion is done here, in software,
+ * because the blit must be 1:1: a scaled blit is the renderer's slow path, the
+ * same one that was costing the background 45 ms a frame. */
 static int art_present(SDL_Renderer *r, Cv *c, int x, int y, int w, int h)
 {
-    SDL_Rect dst;
-
-    s_a3_pr_calls++;
+    SDL_Rect dst, src;
+    Cv       out;
 
     if (!c->p || w < 1 || h < 1)
         return 0;
 
-    if (!s_tex || s_tex_w != c->w || s_tex_h != c->h) {
-        if (s_tex) {
-            SDL_DestroyTexture(s_tex);
-            s_tex = NULL;
+    /* v128: upload the canvas at its own size and let the GPU scale it.
+     *
+     * The console log of 2026-11-25 measured two costs that this removes: a
+     * full-frame software bilinear upscale of 640x360 to 1920x1080 on the CPU
+     * (inside `paint`), and an 8.29 MB RGBA upload of the result (`flush`,
+     * 24-42 ms in every style). Uploading the canvas and scaling in
+     * SDL_RenderCopy is the same picture for a ninth of the bytes and none of
+     * the CPU upscale. `VIS_SOFT_UPSCALE` restores the old path exactly.
+     */
+    out = *c;
+#ifdef VIS_SOFT_UPSCALE
+    if (c->w != w || c->h != h) {
+        size_t need = (size_t)w * (size_t)h * 4;
+
+        if (!s_up || s_up_cap < need) {
+            free(s_up);
+            s_up = cv_alloc(w, h);
+            s_up_cap = s_up ? need : 0;
         }
-        s_tex = SDL_CreateTexture(r, SDL_PIXELFORMAT_ABGR8888,
-                                  SDL_TEXTUREACCESS_STREAMING, c->w, c->h);
-        s_tex_w = c->w;
-        s_tex_h = c->h;
-        s_a3_pr_texcreates++;
+        if (!s_up || !upscale_bilinear(c, s_up, w, h))
+            return 0;
+        out.p = s_up;
+        out.w = w;
+        out.h = h;
     }
-    if (!s_tex)
+#endif
+
+    /* The SDL-PS4 renderer is the *software* one (`SDL_RENDERER_SOFTWARE`; its
+     * PS4 accelerated driver is compiled out), so a RenderCopy whose destination
+     * is larger than the texture runs SDL_BlitScaled on the CPU and
+     * `SDL_HINT_RENDER_SCALE_QUALITY` does nothing there. v128's "the GPU scales
+     * it" was wrong. Measured 2026-11-25: replacing that blit with an integer
+     * nearest-neighbour expansion and a 1:1 copy cost 11.3 ms against 10.4 ms at
+     * step 3 - no win, and a blockier picture - so the blit stays. What v128 did
+     * buy is real and is kept: the upload is canvas-sized instead of 1080p. */
+    /* ---- the texture the canvas actually reaches the screen through -------
+     * `s_tex` was declared at the top of this file, used below, and created
+     * nowhere. `SDL_RenderCopy` with a NULL texture draws nothing and fails,
+     * and this function ignored the failure and answered 1 anyway - so from the
+     * day this present replaced the old path, every look has been painted into
+     * a canvas and thrown away. Found 2026-11-25 by rendering the full-screen
+     * visualizer on the host and counting bright pixels inside the box: zero
+     * of 918,400, with the plate color showing through instead.
+     *
+     * ABGR8888 is r,g,b,a in memory on a little-endian chip, which is exactly
+     * what the canvas holds. */
+    if (!s_tex || s_tex_w != out.w || s_tex_h != out.h) {
+        if (s_tex)
+            SDL_DestroyTexture(s_tex);
+        s_tex   = SDL_CreateTexture(r, SDL_PIXELFORMAT_ABGR8888,
+                                    SDL_TEXTUREACCESS_STREAMING, out.w, out.h);
+        s_tex_w = s_tex ? out.w : 0;
+        s_tex_h = s_tex ? out.h : 0;
+    }
+    if (!s_tex || SDL_UpdateTexture(s_tex, NULL, out.p, out.w * 4) != 0)
         return 0;
 
-    s_a3_pr_uploads++;
-    s_a3_pr_upload_bytes += (unsigned long long)c->w *
-                            (unsigned long long)c->h * 4ULL;
-    SDL_UpdateTexture(s_tex, NULL, c->p, c->w * 4);
-    SDL_SetTextureBlendMode(s_tex, SDL_BLENDMODE_NONE);
     dst.x = x; dst.y = y; dst.w = w; dst.h = h;
-    SDL_RenderCopy(r, s_tex, NULL, &dst);
-    s_a3_pr_copies++;
+    src.x = 0; src.y = 0; src.w = out.w; src.h = out.h;
+    if (src.w > w) src.w = w;
+    if (src.h > h) src.h = h;
+    SDL_RenderCopy(r, s_tex, &src, &dst);
     return 1;
 }
+
+/* -------------------------------------------------------------- finish kit -- */
 
 /* Mirrors everything above a line into the floor below it, dimmed and, if
  * wanted, wobbling - which is most of what makes a flat drawing look like a
@@ -1111,9 +1250,145 @@ static const signed char s_dith[16] = {
 static int *s_bsum;
 static int  s_bsum_n;
 
+
+/* --------------------------------------------------- plate effects (S3) -- */
+
+/* Ported from tools/vis_motion.py, which is the reviewed reference. Every one of
+ * these is compiled only with VIS_PLATE_FX defined, so a build without it is
+ * byte-for-byte the build that shipped: the flag is how a look gets tried on the
+ * console without any chance of reaching a package by accident. */
+#ifdef VIS_PLATE_FX
+
+/* xorshift, so every frame of a look is reproducible from one seed */
+static double fx_rand(unsigned *s)
+{
+    *s ^= *s << 13;
+    *s ^= *s >> 17;
+    *s ^= *s << 5;
+    return (double)(*s % 100000u) / 100000.0;
+}
+
+/* one pixel, additive, straight into the ABGR8888 canvas */
+static void fx_add(Cv *c, int x, int y, int r, int g, int b, int a)
+{
+    unsigned char *q;
+
+    if (x < 0 || y < 0 || x >= c->w || y >= c->h || a <= 0)
+        return;
+    q = c->p + ((size_t)y * (size_t)c->w + (size_t)x) * 4;
+    q[0] = (unsigned char)(q[0] + (r * a) / 255 > 255 ? 255 : q[0] + (r * a) / 255);
+    q[1] = (unsigned char)(q[1] + (g * a) / 255 > 255 ? 255 : q[1] + (g * a) / 255);
+    q[2] = (unsigned char)(q[2] + (b * a) / 255 > 255 ? 255 : q[2] + (b * a) / 255);
+}
+
+/* F3 - water reflection: mirror everything above the waterline into the water,
+ * ripple it a few pixels per row, fade it with depth. */
+static void fx_reflection(Cv *c, double waterline)
+{
+    int y, x, wl = (int)((double)c->h * waterline), depth = c->h - wl;
+
+    if (!c->p || depth < 8)
+        return;
+    for (y = 0; y < depth; y++) {
+        int src = wl - y - 1;
+        int off = (int)(2.0 * sin((double)y * 0.045));
+        int fade = 150 - (150 * y) / depth;
+
+        if (src < 0)
+            break;
+        for (x = 0; x < c->w; x++) {
+            unsigned char *s = c->p + ((size_t)src * (size_t)c->w + (size_t)x) * 4;
+            int dx = x + off;
+
+            if (dx < 0 || dx >= c->w)
+                continue;
+            fx_add(c, dx, wl + y, s[0], s[1], s[2], fade);
+        }
+    }
+}
+
+/* F4 - particles: near ones bigger and brighter, far ones grit. */
+static void fx_particles(Cv *c, int count, unsigned *seed,
+                         double y0, double y1, int cr, int cg, int cb)
+{
+    int i;
+
+    for (i = 0; i < count; i++) {
+        double d = fx_rand(seed);
+        double x = (double)c->w * d;
+        double y = y0 + (y1 - y0) * fx_rand(seed);
+        double r = 0.6 + 1.9 * d;
+        int a = (int)(45 + 150 * (1.0 - d));
+
+        cv_ell_soft(c, x, y, r, r, cr, cg, cb, a);
+    }
+}
+
+/* F2 - volumetric cone: additive, soft-edged, brighter at the source. */
+static void fx_cone(Cv *c, double cx, double top, double bottom, double spread, int a)
+{
+    int i, steps = 28;
+
+    for (i = 0; i < steps; i++) {
+        double t = (double)i / (double)(steps - 1);
+        double y = top + (bottom - top) * t;
+        double half = (double)c->w * spread * (0.16 + t);
+        int aa = (int)((double)a * (1.0 - t) * (1.0 - t));
+
+        cv_ell_soft(c, cx, y, half, (bottom - top) / (double)steps * 1.6, 210, 226, 255, aa);
+    }
+}
+
+/* F6 - the icon's arc language, held to the frame rails. */
+static void fx_plasma(Cv *c, int band, unsigned *seed, int arcs)
+{
+    int i, k;
+
+    for (i = 0; i < arcs; i++) {
+        double x = 40.0 + fx_rand(seed) * (double)(c->w - 200);
+        double y = (double)band;
+        double px = x, py = y;
+
+        for (k = 0; k < 7; k++) {
+            double nx = px + 8.0 + fx_rand(seed) * 20.0;
+            double ny = y + (fx_rand(seed) - 0.5) * 10.0;      /* +-5 px */
+
+            cv_line(c, px, py, nx, ny, 1.4, 215, 238, 255, 190);
+            cv_line(c, px, py + 1.0, nx, ny + 1.0, 3.0, 80, 150, 250, 70);
+            px = nx;
+            py = ny;
+        }
+    }
+}
+
+/* F7 - fine grain, matched to the plates. */
+static void fx_grain(Cv *c, unsigned *seed)
+{
+    size_t i, n = (size_t)c->w * (size_t)c->h * 4;
+
+    if (!c->p)
+        return;
+    for (i = 0; i < n; i += 4) {
+        int g = (int)(fx_rand(seed) * 9.0) - 4;
+        int k;
+
+        for (k = 0; k < 3; k++) {
+            int v = (int)c->p[i + k] + g;
+
+            c->p[i + k] = (unsigned char)(v < 0 ? 0 : (v > 255 ? 255 : v));
+        }
+    }
+}
+#endif /* VIS_PLATE_FX */
+
+/* the quality step the current frame is being painted at; declared here
+ * because the finish pass reads it and art_finish comes first in the file */
+static int s_paint_step = 1;
+
 static void art_finish(Cv *c, const UiModel *m)
 {
     int    bw, bh, x, y, k;
+
     double lv = (double)m->vis_level;
     double gain = (0.58 + 0.80 * lv) * s_bloom_boost;
 
@@ -1175,7 +1450,14 @@ static void art_finish(Cv *c, const UiModel *m)
         if (!s_bsum)
             return;
     }
-    for (k = 0; k < 2; k++) {
+    /* When the ladder has already stepped the canvas down, the frame is going to
+     * be scaled up by the GPU, which softens it anyway - so the wide halo pass
+     * buys nothing there and is skipped. Measured at 1080p on the host: the
+     * finish pass is 6-10 ms of a 35-51 ms frame, and the wide pass is most of
+     * that. */
+    const int nk = (s_paint_step >= 2) ? 1 : 2;
+
+    for (k = 0; k < nk; k++) {
         const int rad = (k == 0) ? 3 : 8;
         const int n   = rad * 2 + 1;
         int       ix, d;
@@ -1290,6 +1572,18 @@ static void art_finish(Cv *c, const UiModel *m)
         }
         free(vcol);
     }
+
+#ifdef VIS_PLATE_FX
+    /* the icon's arc language, held to the two chrome rails of the frame, then
+     * grain last over everything, matched to the plates */
+    {
+        static unsigned fx_seed = 0x9e3779b9u;
+
+        fx_plasma(c, (int)((double)c->h * 0.035), &fx_seed, 3);
+        fx_plasma(c, (int)((double)c->h * 0.965), &fx_seed, 3);
+        fx_grain(c, &fx_seed);
+    }
+#endif
 }
 
 /* --------------------------------------------------------------- fluid -- */
@@ -1297,7 +1591,6 @@ static void art_finish(Cv *c, const UiModel *m)
 /* The quality step the frame is being painted at: 1 full canvas, 2 half, 3
  * third. Set once per frame by art_draw_style() before the style is called, and
  * read by every pass that has a cheaper form at a lower step. */
-static int s_paint_step = 1;
 
 /* =========================================== liquid: tweakable settings ====
  * Everything about the water that is worth changing lives here.
@@ -2379,324 +2672,189 @@ static void art_liquid(Cv *c, const UiModel *m)
     /* a little dust in the air over the tank */
     art_sparks(c, m, 0.0, (double)c->w, (double)c->h * 0.06,
                (double)base, 20, 170, 220, 255);
+#ifdef VIS_PLATE_FX
+    fx_reflection(c, 0.60);          /* the colonnade stands in shallow water */
+#endif
 }
 
 /* ------------------------------------------------------------------ flag -- */
 
+/* A wall of silk in a black room, lit from behind. The folds are what you see:
+ * each one is brighter where the cloth is thin and darker in the crease, and
+ * the hem drags the whole sheet. The bands drive the fold amplitude, so the
+ * cloth breathes with the record. */
 static void art_flag(Cv *c, const UiModel *m)
 {
-    const int stripes = 13;
-    double    t = m->elapsed_sec;
-    double    lv = (double)m->vis_level;
-    double    sh = (double)c->h / (double)stripes;
-    double    canton_w = (double)c->w * 0.42;
-    double    pole = (double)c->w * 0.014 + 2.0;
-    double   *rip;
-    double   *rowlit;
-    int       x, k, i, yy;
+    double t  = m->elapsed_sec;
+    double lv = (double)m->vis_level;
+    double w  = (double)c->w, h = (double)c->h;
+    double top = h * 0.10, bot = h * 0.90;
+    int    x, k;
 
-    rip = (double *)malloc(sizeof(double) * (size_t)c->w);
-    rowlit = (double *)malloc(sizeof(double) * (size_t)c->h);
-    if (!rip || !rowlit) {
-        free(rip);
-        free(rowlit);
-        return;
-    }
-    /* the weave's vertical light is one value per scan line: it was a sine per
-     * pixel, which was most of this look's frame time */
-    for (yy = 0; yy < c->h; yy++)
-        rowlit[yy] = 0.96 + 0.06 * fsind((double)yy * 0.055 + t * 1.2);
+    cv_fill(c, 2, 2, 5);
 
+    /* the light behind the cloth */
+    cv_soft(c, w * 0.52, h * 0.42, w * 0.55, 60, 48, 30, 90);
+    cv_soft(c, w * 0.52, h * 0.42, w * 0.26, 120, 96, 56, 80);
+
+    /* the sheet, column by column: a shaded sine surface */
     for (x = 0; x < c->w; x++) {
-        double u = (double)x / (double)c->w;
-        double big = (double)c->h * (0.030 + 0.060 * lv);
-        double small_ = (double)c->h * 0.012;
+        double u  = (double)x / (double)(c->w - 1);
+        double ph = t * 0.9 + u * 9.0;
+        double amp = (0.35 + 0.65 * lv);
+        double fold = sin(ph) * amp + 0.4 * sin(ph * 2.3 + 1.7) * amp;
+        double lam = 0.5 + 0.5 * fold;                 /* 0 crease, 1 crest */
+        double y0 = top + h * 0.02 * sin(ph * 0.7);
+        double y1 = bot - h * 0.03 * (0.5 + 0.5 * sin(ph * 0.5 + 2.0));
+        int    cr, cg, cb;
 
-        rip[x] = big * sin(u * 7.0 - t * 2.3)
-               + big * 0.40 * sin(u * 15.0 + t * 1.6)
-               + small_ * sin(u * 33.0 - t * 3.1);
+        art_col(0.05 + 0.65 * u, &cr, &cg, &cb);
+        cr = (int)(cr * (0.30 + 0.85 * lam)) + (int)(46 * lam);
+        cg = (int)(cg * (0.30 + 0.85 * lam)) + (int)(30 * lam);
+        cb = (int)(cb * (0.30 + 0.85 * lam)) + (int)(22 * lam);
+
+        cv_rect(c, x, (int)y0, 1, (int)(y1 - y0), clampi(cr, 0, 255),
+                clampi(cg, 0, 255), clampi(cb, 0, 255), 255);
+        /* the crease itself, and the light bleeding along the crest */
+        if (lam < 0.22)
+            cv_rect(c, x, (int)y0, 1, (int)(y1 - y0), 6, 5, 8, (int)(140 * (1.0 - lam * 4.0)));
+        if (lam > 0.86)
+            cv_soft(c, (double)x, (y0 + y1) * 0.5, h * 0.05, cr, cg, cb, 20);
     }
 
-    /* a little grit in the air in front of the cloth */
-    art_sparks(c, m, 0.0, (double)c->w, (double)c->h * 0.05,
-               (double)c->h * 0.95, 20, 220, 216, 200);
-
-    /* Cloth, per pixel. The bands are not stacked rectangles any more: one
-     * continuous strip of cloth is displaced by the beat and the stripe index
-     * is read from the displaced position, so the bands can never separate and
-     * show background through the flag. */
-    for (x = 0; x < c->w; x++) {
-        double crease = fcosd((double)x * 0.052 + t * 1.7) * 0.64
-                      + fcosd((double)x * 0.021 - t * 0.90) * 0.36;
-        double slope = 0.0;
-        double shade = 0.80 + 0.24 * crease + 0.12 * crease * crease * crease;
-        double top = rip[x];
-        int    in_canton = x < (int)canton_w;
-        double clit = 0.0;
-        int    y, yy0 = (int)top, yy1 = (int)(top + sh * (double)stripes);
-
-        if (in_canton)
-            clit = (double)band_at(m, 0.06 + 0.34 * (double)x / canton_w);
-
-        if (x > 0 && x < c->w - 1)
-            slope = (rip[x + 1] - rip[x - 1]) * 0.5;
-        shade -= slope * 0.035;
-        if (shade < 0.46)
-            shade = 0.46;
-        if (shade > 1.20)
-            shade = 1.20;
-
-        for (y = yy0; y < yy1 && y < c->h; y++) {
-            double v = ((double)y - top) / (sh * (double)stripes);
-            double vd = v
-                      + 0.055 * lv * sin(v * 9.0 - t * 2.4 + (double)x * 0.004)
-                      + 0.022 * lv * sin(v * 21.0 + t * 1.3);
-            double pos = vd * (double)stripes;
-            double frac, s;
-            int    b;
-            double br, bg, bb;
-
-            k = (int)floor(pos);
-            if (k < 0)
-                k = 0;
-            if (k > stripes - 1)
-                k = stripes - 1;
-            frac = pos - floor(pos);
-
-            /* The canton is part of the cloth: the same displacement, the
-             * same crease shading, the same weave. Painting it afterwards as a
-             * flat rectangle is what left the blue block floating over the
-             * stripes with its own light on it. */
-            if (in_canton && v < 7.0 / 13.0) {
-                s = shade * rowlit[y];
-                cv_put(c, x, y,
-                       (int)(( 22.0 + clit * 30.0) * s),
-                       (int)(( 40.0 + clit * 46.0) * s),
-                       (int)((104.0 + clit * 66.0) * s));
-                continue;
-            }
-
-            b = k * VIS_BANDS / stripes;
-            {
-                double lit = (double)m->vis_bands[b];
-
-                if (k % 2 == 0) {
-                    br = 168.0 + lit * 74.0;
-                    bg =  24.0 + lit * 44.0;
-                    bb =  44.0 + lit * 50.0;
-                } else {
-                    br = 234.0 + lit * 20.0;
-                    bg = 234.0 + lit * 17.0;
-                    bb = 236.0 + lit * 16.0;
-                }
-            }
-            s = shade * rowlit[y];
-            if (frac < 0.045 || frac > 0.955)     /* the stitched seam */
-                s *= 0.84;
-            cv_put(c, x, y, (int)(br * s), (int)(bg * s), (int)(bb * s));
-        }
+    /* the hem: a dark band with the cloth's own colour caught on it */
+    for (k = 0; k < 3; k++) {
+        double yy = bot - h * 0.04 + (double)k * h * 0.018;
+        cv_line(c, 0.0, yy, w, yy + h * 0.01, 2.0 - (double)k * 0.5,
+                10, 8, 12, 150 - k * 40);
     }
 
-    /* the seam where the canton is sewn on, following the same cloth */
-    for (x = (int)canton_w - 3; x < (int)canton_w; x++) {
-        double top = rip[x];
-
-        cv_line(c, (double)x, top + 1.0, (double)x, top + sh * 7.0 - 1.0,
-                1.4, 6, 10, 30, 120);
-        cv_line(c, (double)x, top + 1.0, (double)x, top + sh * 7.0 - 1.0,
-                1.0, 190, 204, 236, 70);
-    }
-
-    for (i = 0; i < 50; i++) {
-        int    row = 0, count, index = i, col;
-        double rowstep = 1.0 / 9.0;
-        int    long_row = 1;
-
-        while (index >= (long_row ? 6 : 5)) {
-            index -= long_row ? 6 : 5;
-            long_row = !long_row;
-            row++;
-        }
-        count = long_row ? 6 : 5;
-        col = index;
-        {
-            int    b = i * VIS_BANDS / 50;
-            double lit = (double)m->vis_bands[b];
-            double ux = (double)c->w * 0.42;
-            double cx = ux * (0.10 + 0.80 * (double)(col + (long_row ? 0 : 0.5))
-                             / (double)count);
-            /* the stars ride the cloth: no vertical lift, so they can never
-             * float above the canton again */
-            double cy = rip[(int)cx] + sh * 7.0 *
-                        (rowstep + (double)row * (0.93 / 9.0));
-            double rad = sh * 0.26 * (1.0 + lit * 0.55);
-
-            /* the stars are sewn on, not spinning: a fixed orientation, a
-             * tight glow, and they sit in the cloth like everything else */
-            cv_soft(c, cx, cy, rad * 2.2, 150, 200, 255, (int)(18 + lit * 44));
-            star_shape(c, cx, cy, rad, 0.0, 238, 246, 255, 255);
-            cv_soft(c, cx, cy, rad * 0.8, 255, 255, 255, (int)(90 + lit * 80));
-        }
-    }
-
+    /* the air in the beam, and the dark at the edges */
+    art_sparks(c, m, 0.0, w, h * 0.14, h * 0.86, 30, 255, 226, 180);
+    cv_ell_soft(c, w * 0.5, h * 0.5, w * 0.62, h * 0.62, 0, 0, 0, 40);
+#ifdef VIS_PLATE_FX
+    /* the beam is a light source, so it lifts dust out of the dark around it */
     {
-        /* The hoist: a dark band where the cloth is stitched to the pole, and
-         * a shadow just under it. The pole and its rings used to be drawn over
-         * the flag, which put floating circles on the canton. */
-        int yy;
+        static unsigned fx_seed = 0x51ed270bu;
 
-        for (yy = (int)rip[0]; yy < c->h; yy++) {
-            double s = 1.0 - 0.10 * (double)yy / (double)c->h;
-
-            cv_set(c, (int)(pole * 0.30), yy,
-                   (int)(58 * s), (int)(56 * s), (int)(66 * s), 255);
-            cv_set(c, (int)(pole * 0.55), yy,
-                   (int)(116 * s), (int)(112 * s), (int)(122 * s), 255);
-            cv_set(c, (int)(pole * 0.80), yy,
-                   (int)(36 * s), (int)(34 * s), (int)(42 * s), 255);
-        }
+        fx_cone(c, w * 0.5, 0.0, h * 0.74, 0.22, 70);
+        fx_particles(c, 90, &fx_seed, h * 0.10, h * 0.80, 255, 240, 214);
     }
-    free(rip);
-    free(rowlit);
+#endif
 }
+
 
 /* ------------------------------------------------------------------ worm -- */
 
+/* ------------------------------------------------------------------- worm -- */
+
+/* A trench, not a cellar: black water, three shafts of surface light, marine
+ * snow, and one long segmented creature drifting through it. Every fifth ring
+ * carries a photophore, and the whole body is lit ring by ring from the bands,
+ * so the animal is what the music is doing. */
+/* ------------------------------------------------------------------- worm -- */
+
+/* A trench: black water, shafts of surface light, marine snow, and one long
+ * segmented animal drifting through it in an S. Every fifth ring carries a
+ * photophore and the whole body is lit ring by ring from the bands. */
 static void art_worm(Cv *c, const UiModel *m)
 {
+    const int SEG = 84;
     double t = m->elapsed_sec;
+    double lv = (double)m->vis_level;
     double w = (double)c->w, h = (double)c->h;
-    double gy = h * 0.78;
-    double x0 = w * 0.16, x1 = w * 0.80;
-    double rmax = h * 0.086;
-    double endy = gy, endr = rmax;
-    int    x, y, i;
+    double floor_y = h * 0.86;
+    int    i, k;
 
-    /* a damp cellar floor */
-    cv_vgrad(c, 0, 0, c->w, c->h, 5, 8, 13, 12, 12, 20);
-    cv_soft(c, w * 0.55, h * 0.95, w * 0.60, 46, 26, 64, 110);
-    cv_rect(c, 0, (int)gy + 10, c->w, c->h, 11, 10, 16, 255);
-    cv_rect(c, 0, (int)gy + 10, c->w, 2, 44, 38, 58, 200);
-    art_sparks(c, m, 0.0, w, h * 0.10, gy - h * 0.02, 22, 210, 210, 240);
-    for (i = 0; i < c->w; i += 46)
-        cv_line(c, i, gy + 12, i - 26, (double)c->h, 1.4, 20, 18, 28, 160);
+    cv_vgrad(c, 0, 0, c->w, c->h, 7, 18, 25, 1, 4, 7);
 
-    /* the body, column by column: one tube, a real highlight, no banding */
-    for (x = (int)x0; x <= (int)x1; x++) {
-        double u = ((double)x - x0) / (x1 - x0);
-        double ph = t * 2.3 - u * 5.2;
-        double cy = gy - (0.30 + 0.70 * u) * (h * 0.30)
-                   - sin(ph) * h * 0.055;
-        double bulge = 0.36 + 0.64 * sin(ART_PI * (0.16 + 0.74 * u));
-        double rad = rmax * bulge;
-        double lift = 0.5 + 0.5 * sin(ph * 0.5);
-        int    y0 = (int)(cy - rad), y1 = (int)(cy + rad);
-
-        endy = cy;
-        endr = rad;
-
-        /* two shadows: the broad one the body throws, and the tight dark
-         * where it actually touches the floor */
-        /* The broad shadow was laid down every other column at two hundred
-         * pixels across, which was most of this look's frame time. Six columns
-         * apart and a touch tighter is invisible on screen. */
-        if (x % 6 == 0) {
-            cv_soft(c, (double)x, gy + 16, rad * 1.9, 6, 5, 10, 74);
-            cv_soft(c, (double)x, gy + 12, rad * 0.9, 4, 3, 7, 96);
-        }
-
-        for (y = y0; y <= y1; y++) {
-            double ty = ((double)y + 0.5 - cy) / rad;
-            double d2 = 1.0 - ty * ty;
-            double d, lam, cov, spec, mott;
-            int    cr, cg, cb;
-
-            if (d2 <= 0.0)
-                continue;
-            d = sqrt(d2);
-            cov = (rad - fabs((double)y + 0.5 - cy)) + 0.6;
-            if (cov <= 0.0)
-                continue;
-            if (cov > 1.0)
-                cov = 1.0;
-            /* A cylinder, not a stripe: the visible surface normal at this
-             * height is (0, ty, sqrt(1-ty*ty)). Lighting it properly is what
-             * gives the body its roundness, and the half vector gives the wet
-             * highlight a place to live instead of a hard band. */
-            lam = ty * -0.78 + d * 0.44;
-            if (lam < 0.0)
-                lam = 0.0;
-            spec = pow(ty * -0.60 + d * 0.72, 24.0) * 0.85;
-            mott = 0.95 + 0.05 * sin((double)x * 0.21 + ty * 5.0)
-                        + 0.03 * sin((double)x * 0.07 - ty * 2.1);
-            cr = (int)((168 + 26 * lift) * lam * mott + 255 * spec);
-            cg = (int)(( 96 + 20 * lift) * lam * mott + 250 * spec);
-            cb = (int)((124 + 26 * lift) * lam * mott + 255 * spec);
-            cv_set(c, x, y, cr, cg, cb, (int)(255 * cov));
-        }
-        /* the wet back: a soft sheen laid on the tube, not a drawn line */
-        if (x > (int)x0)
-            cv_soft(c, (double)x, cy - rad * 0.40, rad * 0.34,
-                    255, 238, 250, 52);
-        if (x % 13 == 0)
-            cv_soft(c, (double)x + sin((double)x * 1.3) * 3.0, cy + rad * 0.30,
-                    rad * 0.13, 172, 92, 128, 40);
+    /* three shafts, leaning and drifting */
+    for (k = 0; k < 3; k++) {
+        double sx = w * (0.22 + 0.27 * (double)k)
+                  + sin(t * 0.12 + (double)k * 1.7) * w * 0.035;
+        cv_poly(c, (double[]){ sx - w * 0.045, sx + w * 0.045,
+                               sx + w * 0.150, sx - w * 0.150 },
+                   (double[]){ 0.0, 0.0, floor_y, floor_y }, 4,
+                52, 108, 112, 26);
+        cv_poly(c, (double[]){ sx - w * 0.014, sx + w * 0.014,
+                               sx + w * 0.050, sx - w * 0.050 },
+                   (double[]){ 0.0, 0.0, floor_y, floor_y }, 4,
+                80, 150, 150, 26);
     }
 
-    /* head: grown out of the end of the tube, not parked beside it */
+    /* marine snow */
+    for (i = 0; i < 160; i++) {
+        double x = fmod((double)i * 137.51 + sin(t * 0.10 + (double)i) * 10.0, w);
+        double y = fmod((double)i * 71.37 + t * 3.0, h * 0.94);
+        cv_soft(c, x, y, 0.9 + (double)(i % 3) * 0.6, 140, 196, 206,
+                30 + (i % 5) * 10);
+    }
+
+    /* the silt, and the light pooling on it */
+    cv_rect(c, 0, (int)floor_y, c->w, c->h - (int)floor_y, 7, 9, 9, 255);
+    cv_ell_soft(c, w * 0.5, floor_y + h * 0.055, w * 0.50, h * 0.07,
+                36, 72, 70, 54);
+    for (k = 0; k < 9; k++) {
+        double yy = floor_y + (h - floor_y) * (double)k / 9.0;
+        cv_line(c, 0.0, yy, w, yy + 2.0, 1.2, 16, 26, 28, 90);
+    }
+
+    /* the body: an S in the water, tapering to a tail, with a head */
+    for (i = 0; i < SEG; i++) {
+        double u    = (double)i / (double)(SEG - 1);
+        double x    = w * (0.12 + 0.76 * u);
+        double sway = sin(u * 5.0 + t * 0.8) * h * 0.105
+                    + sin(u * 2.1 - t * 0.5) * h * 0.045;
+        double y    = floor_y - h * 0.36 + sway;
+        double prof = sin(3.14159265 * (0.06 + 0.90 * u));
+        double rad  = h * 0.036 * (0.34 + 1.05 * prof) * (1.0 - 0.35 * u);
+        double v    = band_at(m, u * 0.92 + 0.04);
+        int    cr, cg, cb;
+
+        art_col(0.06 + 0.86 * u, &cr, &cg, &cb);
+
+        cv_soft(c, x, y, rad * 3.8, 40 + cr / 3, 100 + cg / 3, 76 + cb / 3, /* halo tightened: 50.6 -> under the 50 ms line */
+                (int)(12 + 30 * v + 12 * lv));
+        cv_ball(c, x, y, rad, 20 + cr / 4, 30 + cg / 4, 26 + cb / 4,
+                196, 240, 220);
+
+        /* the dark seam between rings, which is what makes it an animal */
+        if (i)
+            cv_line(c, x - w * 0.008, y - rad * 0.95, x - w * 0.008,
+                    y + rad * 0.95, 1.6, 2, 6, 8, 90);
+
+        if (i % 5 == 0) {
+            cv_ball(c, x, y + rad * 0.32, rad * 0.46, cr, cg, cb, 255, 255, 240);
+            cv_soft(c, x, y + rad * 0.32, rad * 2.6, cr, cg, cb,
+                    (int)(70 + 130 * v));
+        }
+    }
+
+    /* the head: a wider ring, an eye, and a lantern of its own */
     {
-        double hx = x1 + endr * 0.55;
-        double hy = endy - endr * 0.55;
-        double hr = endr * 1.9;
-        double er = hr * 0.24;
-
-        cv_taper(c, x1 - endr * 0.8, endy, hx, hy, endr * 0.95, hr * 0.92,
-                 198, 126, 152, 255);
-        cv_soft(c, hx, gy + 14, hr * 2.2, 6, 5, 10, 120);
-        cv_ball(c, hx, hy, hr * 1.05, 30, 18, 36, 80, 46, 96);
-        cv_ball(c, hx, hy, hr, 206, 132, 156, 255, 246, 255);
-        cv_soft(c, hx - hr * 0.34, hy - hr * 0.44, hr * 0.48, 255, 250, 255, 110);
-        cv_line(c, hx + hr * 0.08, hy + hr * 0.60, hx + hr * 0.60, hy + hr * 0.46,
-                2.6, 96, 40, 70, 220);
-        cv_soft(c, hx + hr * 0.36, hy + hr * 0.68, hr * 0.15, 70, 16, 36, 200);
-        cv_ball(c, hx + hr * 0.24, hy - hr * 0.26, er + 1.4, 250, 250, 255, 255, 255, 255);
-        cv_ball(c, hx + hr * 0.50, hy + hr * 0.26, er + 1.4, 250, 250, 255, 255, 255, 255);
-        cv_ball(c, hx + hr * 0.31, hy - hr * 0.26, er * 0.62, 40, 70, 50, 60, 170, 130);
-        cv_ball(c, hx + hr * 0.57, hy + hr * 0.26, er * 0.62, 40, 70, 50, 60, 170, 130);
-        cv_set(c, (int)(hx + hr * 0.26), (int)(hy - hr * 0.33), 255, 255, 255, 255);
-        cv_set(c, (int)(hx + hr * 0.52), (int)(hy + hr * 0.19), 255, 255, 255, 255);
+        double hx = w * 0.885, hy = floor_y - h * 0.36
+                  + sin(5.0 + t * 0.8) * h * 0.105 + sin(2.1 - t * 0.5) * h * 0.045;
+        cv_ball(c, hx, hy, h * 0.042, 34, 50, 46, 210, 250, 230);
+        cv_ball(c, hx + h * 0.012, hy - h * 0.008, h * 0.008, 10, 10, 12, 90, 110, 110);
+        cv_soft(c, hx, hy, h * 0.16, 90, 190, 170, 60);
     }
 
-    /* rings of muscle along the back, catching the light in sequence */
-    for (i = 0; i < 26; i++) {
-        double u = 0.06 + 0.86 * (double)i / 26.0;
-        double bx = x0 + u * (x1 - x0);
-        double ph = t * 2.3 - u * 5.2;
-        double bcy = gy - (0.30 + 0.70 * u) * (h * 0.30) - sin(ph) * h * 0.055;
-        double bul = 0.36 + 0.64 * sin(ART_PI * (0.16 + 0.74 * u));
-        double br = rmax * bul;
-
-        cv_line(c, bx - br * 0.22, bcy - br * 0.88, bx + br * 0.06,
-                bcy - br * 0.82, 1.0, 255, 236, 242, 22);
-        cv_soft(c, bx, bcy + br * 0.16, br * 0.26, 120, 44, 78, 22);
+    /* bubbles off the back */
+    for (i = 0; i < 28; i++) {
+        double u  = (double)(i % 14) / 14.0;
+        double bx = w * (0.12 + 0.76 * u) + sin(t * 0.8 + (double)i) * 7.0;
+        double by = floor_y - h * 0.30 - fmod(t * 30.0 + (double)i * 41.0, h * 0.52);
+        cv_ball(c, bx, by, 1.6 + (double)(i % 4) * 0.9, 46, 100, 106, 200, 240, 240);
     }
-
-    /* tail: one continuous taper out of the body's start, so the two are the
-     * same animal instead of a body with a blob beside it */
+    cv_soft(c, w * 0.5, h * 0.95, w * 0.60, 10, 26, 32, 70);
+#ifdef VIS_PLATE_FX
+    /* particulate water: what the trench lamp picks up out of the dark */
     {
-        double ty0 = gy - h * 0.09 - sin(t * 2.3) * h * 0.055;
-        double ty1 = gy - 0.30 * (h * 0.30) - sin(t * 2.3) * h * 0.055;
+        static unsigned fx_seed = 0x2545f491u;
 
-        for (i = 0; i < 48; i++) {
-            double u = (double)i / 47.0;
-            double yy = ty0 + (ty1 - ty0) * u * u;
-            double xx = x0 - (1.0 - u) * w * 0.075;
-            double rr = rmax * (0.13 + 0.53 * u);
-
-            cv_soft(c, xx, gy + 14.0, rr * 2.0, 4, 3, 8, 60);
-            cv_ball(c, xx, yy, rr, 164, 100, 124, 246, 226, 244);
-        }
+        fx_particles(c, 190, &fx_seed, 0.0, h, 170, 218, 255);
     }
+#endif
 }
 
 /* -------------------------------------------------------------- windmill -- */
@@ -2745,158 +2903,94 @@ static void art_blade(Cv *c, double hx, double hy, double ang, double len,
     cv_line(c, lx0, ly0, mx1, my1, 1.3, 86, 70, 54, alpha * 2 / 3);
 }
 
+/* A field at dusk: the sky doing most of the work, one low sun, black hills,
+ * and a mill whose four sails turn against the light. The sails take their
+ * speed from the level and their catch-light from the bands. */
 static void art_windmill(Cv *c, const UiModel *m)
 {
-    double t = m->elapsed_sec;
-    double w = (double)c->w, h = (double)c->h;
-    double hx = w * 0.47, hy = h * 0.415;
-    double len = h * 0.395;
-    double ang = t * 1.25 + (double)m->vis_level * 1.4;
-    int    k, i;
+    const int BLADES = 4;
+    double t  = m->elapsed_sec;
+    double lv = (double)m->vis_level;
+    double w  = (double)c->w, h = (double)c->h;
+    double horizon = h * 0.66;
+    double mx = w * 0.68, my = horizon - h * 0.20;
+    double spin = t * (0.35 + 0.9 * lv);
+    int    i, k, seg;
 
-    /* dusk sky */
-    cv_vgrad(c, 0, 0, c->w, (int)(h * 0.62), 16, 18, 44, 96, 62, 72);
-    cv_vgrad(c, 0, (int)(h * 0.62), c->w, c->h - (int)(h * 0.62), 96, 62, 72, 22, 18, 30);
-    for (i = 0; i < 34; i++) {
-        double sx = fmod((double)i * 97.3, w);
-        double sy = fmod((double)i * 41.7, h * 0.52);
-        double tw = 0.5 + 0.5 * sin(t * 1.6 + (double)i);
+    /* the sky, three bands of it, and the sun under the clouds */
+    cv_vgrad(c, 0, 0, c->w, (int)horizon, 12, 16, 46, 96, 52, 54);
+    cv_vgrad(c, 0, (int)(horizon * 0.55), c->w, (int)(horizon * 0.45),
+             96, 52, 54, 220, 130, 74);
+    cv_ell_soft(c, w * 0.34, horizon - h * 0.06, w * 0.30, h * 0.11,
+                255, 186, 96, 120);
+    cv_ball(c, w * 0.34, horizon - h * 0.045, h * 0.042, 255, 220, 150,
+            255, 255, 240);
+    cv_soft(c, w * 0.34, horizon - h * 0.045, h * 0.26, 255, 190, 110, 90);
 
-        cv_soft(c, sx, sy, 1.3 + (double)(i % 3) * 0.6, 225, 238, 255,
-                (int)(70 + 90 * tw));
-    }
-    /* the sun, low and behind the sails */
-    cv_soft(c, w * 0.76, h * 0.58, h * 0.34, 255, 140, 80, 70);
-    cv_soft(c, w * 0.76, h * 0.58, h * 0.17, 255, 196, 128, 120);
-    cv_soft(c, w * 0.76, h * 0.58, h * 0.07, 255, 236, 200, 150);
-    /* the dust the sails turn through, lit by the low sun */
-    art_sparks(c, m, 0.0, w, h * 0.18, h * 0.86, 24, 255, 214, 180);
+    /* cloud bars, lit from below */
+    for (k = 0; k < 7; k++) {
+        double yy = h * (0.10 + 0.055 * (double)k);
+        double off = sin((double)k * 2.1 + t * 0.03) * w * 0.06;
 
-    /* long cloud bands lit from underneath by that sun: the layer that turns a
-     * gradient into an evening */
-    for (i = 0; i < 7; i++) {
-        double cy = h * (0.16 + 0.052 * (double)i);
-        double cw = w * (0.22 + 0.10 * (double)(i % 4));
-        double cx = w * (0.18 + 0.62 * fmod((double)i * 0.37 + t * 0.006, 1.0));
-        double d = 1.0 - (double)i / 8.0;
-
-        cv_soft(c, cx, cy + 6.0, cw, 236, 148, 126, (int)(16 + 24 * d));
-        cv_soft(c, cx, cy, cw * 0.9, 96, 84, 128, (int)(22 + 26 * d));
-        cv_soft(c, cx + cw * 0.5, cy + 3.0, cw * 0.30, 255, 190, 150, (int)(20 * d));
+        cv_ell_soft(c, w * (0.30 + 0.09 * (double)k) + off, yy,
+                    w * (0.26 - 0.02 * (double)k), h * 0.018,
+                    255, 170, 130, 26);
     }
 
-    /* far hills, two layers so there is depth behind the tower */
-    {
-        double xs[6], ys[6];
+    /* the hills, two of them */
+    cv_poly(c, (double[]){ 0, w * 0.22, w * 0.44, w * 0.68, w, w },
+               (double[]){ horizon, horizon - h * 0.09, horizon - h * 0.03,
+                           horizon - h * 0.10, horizon - h * 0.02, horizon },
+            6, 26, 18, 30, 255);
+    cv_rect(c, 0, (int)horizon, c->w, (int)(h - horizon), 12, 10, 14, 255);
 
-        xs[0] = 0;        ys[0] = h;
-        xs[1] = 0;        ys[1] = h * 0.80;
-        xs[2] = w * 0.30; ys[2] = h * 0.74;
-        xs[3] = w * 0.62; ys[3] = h * 0.79;
-        xs[4] = w;        ys[4] = h * 0.75;
-        xs[5] = w;        ys[5] = h;
-        cv_poly(c, xs, ys, 6, 30, 30, 48, 255);
-    }
-    {
-        double xs[5], ys[5];
+    /* the mill: tower, cap, and the sails */
+    cv_poly(c, (double[]){ mx - w * 0.045, mx + w * 0.045,
+                           mx + w * 0.030, mx - w * 0.030 },
+               (double[]){ horizon, horizon, my, my }, 4, 10, 8, 12, 255);
+    cv_poly(c, (double[]){ mx - w * 0.038, mx + w * 0.038, mx },
+               (double[]){ my, my, my - h * 0.05 }, 3, 8, 7, 10, 255);
 
-        xs[0] = 0;        ys[0] = h;
-        xs[1] = 0;        ys[1] = h * 0.87;
-        xs[2] = w * 0.52; ys[2] = h * 0.83;
-        xs[3] = w;        ys[3] = h * 0.88;
-        xs[4] = h * 0 + w; ys[4] = h;
-        cv_poly(c, xs, ys, 5, 16, 18, 30, 255);
-    }
+    for (i = 0; i < BLADES; i++) {
+        double a = spin + (double)i * 1.5707963;
+        double ex = mx + cos(a) * h * 0.30;
+        double ey = my + sin(a) * h * 0.30;
+        double px = -sin(a), py = cos(a);
 
-    /* the mill: stone body, brick courses, lit face and shadowed face */
-    {
-        double bw = w * 0.072, tw = w * 0.050;
-        double by = h * 0.90, ty = h * 0.38;
+        for (seg = 0; seg < 6; seg++) {
+            double u0 = 0.12 + (double)seg * 0.145;
+            double u1 = u0 + 0.145;
+            double x0 = mx + (ex - mx) * u0, y0 = my + (ey - my) * u0;
+            double x1 = mx + (ex - mx) * u1, y1 = my + (ey - my) * u1;
+            double hw0 = h * (0.012 + 0.030 * u0), hw1 = h * (0.012 + 0.030 * u1);
+            int    cr, cg, cb, v = band_at(m, u0 * 0.9);
 
-        cv_poly(c, (double[]){ hx - bw, hx + bw, hx + tw, hx - tw },
-                   (double[]){ by, by, ty, ty }, 4, 58, 52, 48, 255);
-        /* the sun is behind and to the right, so that face is the lit one */
-        cv_poly(c, (double[]){ hx, hx + bw, hx + tw, hx },
-                   (double[]){ by, by, ty, ty }, 4, 104, 90, 78, 238);
-        /* brick courses */
-        for (k = 0; k < 14; k++) {
-            double u = (double)k / 14.0;
-            double yy = ty + (by - ty) * u;
-            double halfw = tw + (bw - tw) * u;
-
-            cv_line(c, hx - halfw, yy, hx + halfw, yy, 1.2, 54, 46, 42, 110);
+            art_col(0.55 + 0.40 * u0, &cr, &cg, &cb);
+            cv_poly(c, (double[]){ x0 + px * hw0, x1 + px * hw1,
+                                   x1 - px * hw1, x0 - px * hw0 },
+                       (double[]){ y0 + py * hw0, y1 + py * hw1,
+                                   y1 - py * hw1, y0 - py * hw0 }, 4,
+                    9, 8, 11, 255);
+            /* the lit edge, catching the sun */
+            cv_line(c, x0 + px * hw0, y0 + py * hw0,
+                    x1 + px * hw1, y1 + py * hw1, 1.4 + 2.2 * v,
+                    255, 208, 150, (int)(70 + 120 * v));
         }
-        /* door, window with a warm lamp, and the balcony */
-        cv_poly(c, (double[]){ hx - w * 0.016, hx + w * 0.016,
-                               hx + w * 0.016, hx - w * 0.016 },
-                   (double[]){ by, by, by - h * 0.085, by - h * 0.085 }, 4,
-                38, 30, 26, 255);
-        cv_line(c, hx, by, hx, by - h * 0.085, 1.6, 24, 20, 18, 220);
-        cv_soft(c, hx, by - h * 0.045, w * 0.028, 255, 186, 110, 120);
-        cv_rect(c, (int)(hx - w * 0.010), (int)(h * 0.55),
-                (int)(w * 0.020), (int)(h * 0.030), 44, 48, 66, 255);
-        cv_rect(c, (int)(hx - w * 0.010), (int)(h * 0.55), (int)(w * 0.020), 2,
-                220, 200, 160, 150);
-        cv_rect(c, (int)(hx - tw - 4), (int)ty - 3, (int)(tw * 2 + 8), 5,
-                62, 56, 50, 255);
-        /* cap: a dark shingled cone with a small ridge */
-        cv_poly(c, (double[]){ hx - tw - 6, hx + tw + 6, hx },
-                   (double[]){ ty - 2, ty - 2, ty - h * 0.10 }, 3, 40, 34, 32, 255);
-        cv_poly(c, (double[]){ hx, hx + tw + 6, hx },
-                   (double[]){ ty - 2, ty - 2, ty - h * 0.10 }, 3, 76, 64, 56, 170);
     }
+    cv_ball(c, mx, my, h * 0.016, 40, 34, 34, 255, 230, 190);
 
-    /* ambient shadow where the mill meets the field, and the sun catching
-     * its right-hand edge */
-    cv_soft(c, hx + w * 0.030, h * 0.905, w * 0.085, 6, 6, 10, 130);
-    cv_soft(c, hx + w * 0.050, h * 0.895, w * 0.055, 4, 4, 8, 80);
-    cv_line(c, hx + w * 0.060, h * 0.895, hx + w * 0.042, h * 0.395,
-            2.4, 255, 196, 132, 120);
-    cv_line(c, hx - w * 0.060, h * 0.895, hx - w * 0.042, h * 0.395,
-            1.6, 120, 160, 220, 46);
-
-    /* sails: two ghosts for motion, then the live one */
-    for (k = 0; k < 4; k++) {
-        double a = ang + (double)k * ART_PI / 2.0;
-
-        art_blade(c, hx, hy, a - 0.11, len, h * 0.066, 14, m->vis_level);
-        art_blade(c, hx, hy, a - 0.05, len, h * 0.066, 26, m->vis_level);
-        art_blade(c, hx, hy, a, len, h * 0.066, 255, m->vis_level);
+    /* the field: converging furrows, and grass catching the last light */
+    for (k = -8; k <= 8; k++)
+        cv_line(c, w * 0.5 + (double)k * w * 0.02, horizon,
+                w * 0.5 + (double)k * w * 0.16, h, 1.2, 30, 20, 22, 90);
+    for (k = 0; k < 26; k++) {
+        double u = (double)k / 26.0;
+        double yy = horizon + (h - horizon) * pow(u, 1.4);
+        cv_line(c, 0.0, yy, w, yy, 1.0, 60, 36, 30, (int)(26 * u + 10));
     }
-    cv_ball(c, hx, hy, h * 0.032, 78, 70, 64, 255, 220, 190);
-    cv_ring(c, hx, hy, h * 0.038, 2.2, 40, 34, 30, 220);
-    for (k = 0; k < 4; k++) {
-        double a = (double)k * ART_PI / 2.0 + 0.78;
-
-        cv_set(c, (int)(hx + cos(a) * h * 0.024), (int)(hy + sin(a) * h * 0.024),
-               240, 230, 210, 220);
-    }
-
-    /* grass and a path, so the mill stands somewhere */
-    /* the field itself, warmer near the sun and falling into shadow at the
-     * edges, with grass that catches the last light on its tips */
-    {
-        double gx[4], gy[4];
-
-        gx[0] = 0.0;      gy[0] = h * 0.86;
-        gx[1] = w;        gy[1] = h * 0.87;
-        gx[2] = w;        gy[2] = h;
-        gx[3] = 0.0;      gy[3] = h;
-        cv_poly(c, gx, gy, 4, 24, 27, 30, 255);
-        cv_soft(c, w * 0.70, h * 0.92, w * 0.48, 148, 108, 62, 86);
-        cv_soft(c, w * 0.10, h * 1.00, w * 0.35, 8, 10, 16, 80);
-    }
-    for (i = 0; i < 130; i++) {
-        double gx = (double)i * w / 130.0;
-        double gh = h * (0.022 + 0.020 * sin((double)i * 1.7));
-        double tip = 0.4 + 0.6 * ((double)i / 130.0);
-
-        cv_line(c, gx, h, gx + 1.5, h - gh, 2.2, 26, 30, 30, 235);
-        cv_line(c, gx + 1.5, h - gh, gx + 2.0, h - gh - 2.0, 1.2,
-                (int)(80 + 70 * tip), (int)(84 + 56 * tip), (int)(60 + 30 * tip), 180);
-    }
-    cv_soft(c, hx, h * 0.93, w * 0.06, 90, 80, 60, 40);
+    art_sparks(c, m, 0.0, w, horizon - h * 0.10, h * 0.98, 20, 255, 210, 150);
 }
+
 
 /* ------------------------------------------------------------- the humans -- */
 
@@ -3778,9 +3872,27 @@ static void art_dancer2(Cv *c, const Pose *p, const Rig *rig, double lv,
                  p->cx + (i ? 1.0 : -1.0) * p->sw * 0.58, shy + t * 0.02,
                  t * 0.28, t * 0.20, k->skin_r, k->skin_g, k->skin_b, 255);
     }
+    /* The midriff: ribcage, waist, hip. It used to be one width from the hem
+     * of the top to the waistband, which is a rectangle of skin however well
+     * it is shaded. Narrowing it at the waist and shadowing both sides is what
+     * turns that rectangle back into a body. */
     art_col_shade(c, p->cy + t * 1.22, p->py - t * 0.42,
-                  p->cx, p->px, p->sw * 0.76, p->hw * 0.90, p->hw * 1.00,
+                  p->cx, p->px, p->sw * 0.78, p->sw * 0.52, p->hw * 0.90,
                   k->skin_r, k->skin_g, k->skin_b, 255, &skin);
+    {
+        int s;
+
+        for (s = 0; s < 2; s++) {
+            double sgn = s ? 1.0 : -1.0;
+
+            cv_taper(c, p->cx + sgn * p->sw * 0.74, p->cy + t * 1.26,
+                     p->cx + sgn * p->sw * 0.46, p->py - t * 0.52,
+                     t * 0.10, t * 0.06, 30, 16, 26, 105);
+            cv_taper(c, p->cx + sgn * p->sw * 0.50, p->cy + t * 1.30,
+                     p->cx + sgn * p->sw * 0.32, p->py - t * 0.60,
+                     t * 0.055, t * 0.035, 255, 224, 206, 46);
+        }
+    }
     art_col_shade(c, shy - t * 0.16, p->cy + t * 1.28,
                   p->cx, p->cx, p->sw * 1.02, p->sw * 1.06, p->sw * 0.88,
                   k->top_r, k->top_g, k->top_b, 255, &cloth);
@@ -3980,13 +4092,205 @@ static void dance_beam(Cv *c, double sx, double ey, double tx, double spread,
  * masking legs in the foreground that frame the shot. The legs are the cheapest
  * thing here and they do the most: they put something in front of the stage, so
  * the stage reads as being behind it. */
-static void dance_stage(Cv *c, const UiModel *m, int cool)
+/* ------------------------------------------------------- the robot's room -- */
+
+/* Not a stage. A plant room with the shutters down: steel slats across the
+ * back, a gantry over the top, hazard paint where the concrete meets it, one
+ * working lamp, and a cold no other look in the set has. The machine has to
+ * stand somewhere that is not the club, or the club is all the set ever is. */
+static void dance_lab(Cv *c, const UiModel *m)
+{
+    double w = (double)c->w, h = (double)c->h;
+    double lv = (double)m->vis_level;
+    double top = h * 0.042, bot = h * 0.560;
+    int    i, j;
+
+    bg_grad(c, 0, c->h, 15, 20, 21, 4, 5, 7);
+
+    /* the shutter wall: twenty slats, each one lit by the band under it */
+    for (j = 0; j < 20; j++) {
+        double y0 = top + (bot - top) * (double)j / 20.0;
+        double y1 = top + (bot - top) * (double)(j + 1) / 20.0;
+        double lit = band_at(m, (double)j / 19.0);
+        int    rr = (int)(17 + 44 * lit), gg = (int)(27 + 56 * lit);
+        int    bb = (int)(27 + 42 * lit);
+
+        for (i = cv_i(y0) + 2; i <= cv_i(y1) - 2; i++)
+            cv_line(c, 0.0, (double)i, w, (double)i, 1.0, rr, gg, bb, 255);
+        cv_line(c, 0.0, y0, w, y0, 1.7, 5, 8, 9, 230);
+        cv_line(c, 0.0, y0 + 2.2, w, y0 + 2.2, 1.0, 132, 150, 142, 26);
+    }
+    /* the seams between the bays, and the rust bleeding out of them */
+    for (i = 0; i <= 6; i++) {
+        double x = w * (double)i / 6.0;
+
+        cv_line(c, x, top, x, bot, 2.4, 6, 9, 10, 220);
+        cv_line(c, x + 2.4, top, x + 2.4, bot, 1.0, 104, 120, 112, 30);
+        cv_ell_soft(c, x, bot - h * 0.010, w * 0.010, h * 0.030,
+                    96, 70, 46, 26);
+    }
+    /* the gantry: a beam, a handrail and the uprights that hold it */
+    cv_rect(c, 0, cv_i(h * 0.024), c->w, (int)(h * 0.015), 15, 19, 20, 255);
+    cv_line(c, 0.0, h * 0.040, w, h * 0.040, 1.6, 76, 88, 86, 180);
+    for (i = 0; i < 11; i++) {
+        double x = w * (0.028 + 0.094 * (double)i);
+
+        cv_line(c, x, h * 0.008, x, h * 0.040, 1.3, 62, 74, 72, 150);
+    }
+    /* one working lamp in the middle of the gantry, breathing with the level */
+    {
+        double sx = w * 0.5;
+        int    k;
+
+        for (k = 1; k >= 0; k--) {
+            double sp = w * (0.016 + 0.030 * (double)k);
+
+            cv_poly(c, (double[]){ sx - 9.0, sx + 9.0, sx + sp, sx - sp },
+                       (double[]){ h * 0.046, h * 0.046,
+                                   h * 0.900, h * 0.900 }, 4,
+                    238, 240, 220, 6 + 3 * k + (int)(5 * lv));
+        }
+        cv_rect(c, cv_i(sx - 22.0), cv_i(h * 0.034), 44, (int)(h * 0.014),
+                20, 24, 24, 255);
+        cv_ell(c, sx, h * 0.048, 13.0, 5.0, 30, 34, 34, 240);
+        cv_soft(c, sx, h * 0.050, 30.0, 255, 250, 222, (int)(64 + 70 * lv));
+    }
+    /* a pipe run down the left, with its collars and its outline */
+    cv_line(c, w * 0.045, h * 0.10, w * 0.045, h * 0.70, 7.0, 44, 52, 52, 255);
+    cv_line(c, w * 0.045 - 2.0, h * 0.10, w * 0.045 - 2.0, h * 0.70, 2.0,
+            120, 132, 126, 60);
+    for (i = 0; i < 5; i++)
+        cv_ball(c, w * 0.045, h * (0.16 + 0.14 * (double)i), 6.0,
+                60, 68, 68, 150, 160, 156);
+
+    /* the floor: steel plate with a workshop grid */
+    bg_grad(c, cv_i(bot), c->h, 19, 24, 26, 4, 5, 7);
+    for (i = -8; i <= 8; i++)
+        cv_line(c, w * 0.5 + (double)i * w * 0.055, bot,
+                w * 0.5 + (double)i * w * 0.36, h, 1.1, 56, 66, 68, 46);
+    for (i = 1; i <= 8; i++) {
+        double u = (double)i / 8.0;
+        double yy = bot + (h - bot) * u * u;
+
+        cv_line(c, 0.0, yy, w, yy, 1.0, 52, 62, 64, (int)(12 + 26 * u));
+    }
+    cv_ell_soft(c, w * 0.5, h * 0.905, w * 0.28, h * 0.048, 214, 222, 190,
+                (int)(20 + 34 * lv));
+    /* the hazard paint on the lip, half worn away */
+    for (i = -2; i < 44; i++) {
+        double x = (double)i * w * 0.031;
+
+        cv_line(c, x, h * 0.872, x + w * 0.020, h * 0.899, 5.0, 188, 148, 40,
+                (int)(70 + 40 * fsind((double)i * 1.7)));
+    }
+    cv_line(c, 0.0, h * 0.884, w, h * 0.884, 2.0, 150, 158, 138, 90);
+
+    /* the air is not clean: a low mist across the floor and grit in it */
+    for (i = 0; i < 5; i++)
+        cv_soft(c, w * (0.14 + 0.18 * (double)i),
+                h * (0.80 + 0.035 * (double)(i % 3)),
+                w * 0.15, 120, 138, 132, 14);
+    art_sparks(c, m, 0.0, w, h * 0.10, h * 0.86, 22, 220, 232, 210);
+}
+
+/* ------------------------------------------------------------ the theater -- */
+
+/* A proscenium house, which is a different idea of a stage from the club: warm
+ * instead of cold, cloth instead of panels, footlights instead of a truss. The
+ * drapes are drawn as folds - a lit edge, a body, a shadow - because a flat red
+ * rectangle down the side of the frame is a curtain in nobody's memory. */
+static void dance_theater(Cv *c, const UiModel *m)
+{
+    double t = m->elapsed_sec, w = (double)c->w, h = (double)c->h;
+    double lv = (double)m->vis_level;
+    int    x, i;
+
+    for (x = 0; x < c->w; x++) {
+        double u = (double)x / (w > 1.0 ? w - 1.0 : 1.0);
+        double e = u < 0.5 ? u : 1.0 - u;
+        double fold = 0.42 + 0.58 * (0.5 + 0.5 * fsind((double)x * 0.085));
+        int    y;
+
+        for (y = 0; y < c->h; y++) {
+            double vy = (double)y / (h > 1.0 ? h - 1.0 : 1.0);
+            int    r, g, b;
+
+            if (e < 0.215) {
+                double sh = fold * (0.94 - 0.30 * vy);
+
+                r = (int)(164 * sh) + 8;
+                g = (int)(42 * sh) + 3;
+                b = (int)(56 * sh) + 6;
+            } else {
+                double d = 1.0 - fabs(u - 0.5) * 1.9;
+
+                if (d < 0.0) d = 0.0;
+                d = d * d;
+                r = (int)(26 + 58 * d + 14 * (1.0 - vy));
+                g = (int)(14 + 26 * d + 6 * (1.0 - vy));
+                b = (int)(24 + 30 * d + 10 * (1.0 - vy));
+            }
+            cv_put(c, x, y, r, g, b);
+        }
+    }
+    /* the swag across the top: three scallops with a gold edge */
+    for (i = 0; i < 3; i++) {
+        double cx = w * (0.22 + 0.28 * (double)i);
+
+        cv_ell(c, cx, h * 0.012, w * 0.135, h * 0.055, 118, 30, 44, 255);
+        cv_ell_soft(c, cx, h * 0.052, w * 0.135, h * 0.014, 208, 150, 70, 90);
+    }
+    cv_line(c, 0.0, h * 0.058, w, h * 0.058, 2.0, 196, 156, 84, 150);
+    cv_soft(c, w * 0.5, h * 0.44, w * 0.30, 176, 128, 82,
+            (int)(26 + 26 * lv));
+
+    /* the boards: dark polished wood, warmer toward the footlights */
+    bg_grad(c, cv_i(h * 0.560), c->h, 41, 24, 26, 9, 6, 9);
+    for (i = -7; i <= 7; i++)
+        cv_line(c, w * 0.5 + (double)i * w * 0.058, h * 0.560,
+                w * 0.5 + (double)i * w * 0.35, h, 1.2, 96, 62, 58, 46);
+    for (i = 1; i <= 8; i++) {
+        double u = (double)i / 8.0;
+        double yy = h * 0.560 + h * 0.44 * u * u;
+
+        cv_line(c, 0.0, yy, w, yy, 1.0, 84, 54, 52, (int)(14 + 26 * u));
+    }
+    /* the footlights: a row of lamps on the lip, each with its flare and its
+     * reflection running toward the camera */
+    for (i = 0; i < 9; i++) {
+        double sx = w * (0.06 + 0.11 * (double)i);
+        double fl = 0.72 + 0.28 * fsind(t * 3.1 + (double)i * 1.3);
+
+        cv_soft(c, sx, h * 0.902, w * 0.032, 255, 216, 150, (int)(34 * fl));
+        cv_ball(c, sx, h * 0.900, w * 0.0075, 255, 238, 190, 255, 255, 255);
+        cv_ell_soft(c, sx, h * 0.955, w * 0.012, h * 0.045, 255, 208, 140,
+                    (int)(14 * fl));
+    }
+    cv_line(c, 0.0, h * 0.884, w, h * 0.884, 2.4, 214, 172, 108, 120);
+
+    /* dust in the beams, which is what a theater has instead of fog */
+    art_sparks(c, m, 0.0, w, h * 0.08, h * 0.88, 30, 255, 226, 190);
+}
+
+static void dance_stage(Cv *c, const UiModel *m, int style)
 {
     double t = m->elapsed_sec;
     double w = (double)c->w, h = (double)c->h;
     double lv = (double)m->vis_level;
     double top = h * 0.042, bot = h * 0.548;
     int    i, x;
+
+    /* each dance is danced somewhere different: the club, the plant room, the
+     * theater. One room shared by all three is what made them read as one look
+     * with three captions. */
+    if (style == VIS_STYLE_DANCE2) {
+        dance_lab(c, m);
+        return;
+    }
+    if (style == VIS_STYLE_DANCE3) {
+        dance_theater(c, m);
+        return;
+    }
 
     bg_grad(c, 0, c->h, 10, 11, 21, 4, 4, 10);
 
@@ -4044,7 +4348,7 @@ static void dance_stage(Cv *c, const UiModel *m, int cool)
         double flick = 0.86 + 0.14 * fsind(t * 9.0 + (double)i);
 
         dance_beam(c, sx, ey, tx, w * (0.050 + 0.016 * (double)(i % 3)),
-                   lit * flick, cool);
+                   lit * flick, 1);
         /* the can: a body, a lens and a flare at the mouth */
         bg_rect(c, cv_i(sx - 9.0), cv_i(h * 0.030), 18, (int)(h * 0.016), 16, 17, 24);
         cv_ell(c, sx, h * 0.045, 7.5, 4.5, 26, 28, 38, 230);
@@ -4120,6 +4424,19 @@ static void dance_stage(Cv *c, const UiModel *m, int cool)
         }
         cv_line(c, mw, 0.0, mw, h, 1.8, 70, 92, 150, 110);
         cv_line(c, w - mw, 0.0, w - mw, h, 1.8, 70, 92, 150, 110);
+    }
+
+    /* the front row: dark shoulders along the bottom edge. A lit stage with
+     * nobody in front of it is a rehearsal room. */
+    for (i = 0; i < 7; i++) {
+        double cxp = w * (0.075 + 0.142 * (double)i)
+                   + fsind(t * 0.6 + (double)i * 1.7) * w * 0.008;
+        double rh = h * (0.034 + 0.012 * (double)(i % 3));
+
+        cv_ell(c, cxp, h - rh * 0.55, rh * 0.80, rh * 0.95, 24, 28, 50, 255);
+        cv_ell(c, cxp, h - rh * 1.35, rh * 0.52, rh * 0.50, 34, 39, 64, 255);
+        cv_ell(c, cxp, h - rh * 1.62, rh * 0.34, rh * 0.10,
+               120, 165, 225, 120);
     }
 }
 
@@ -4246,6 +4563,259 @@ static void dance_build(Pose *p, double t, double lv, double w, double h,
     }
 }
 
+/* The machine, painted with the same skeleton as the dancer.
+ *
+ * The style is called ROBOT and the old version was a person with snapped
+ * timing, which is a mime. This has none of a person's curves: ringed servos at
+ * every joint, flat plates for feet, a visor instead of a face, a chest core
+ * that takes the bass, and an antenna that ticks. Ghost passes drop it to a
+ * silhouette so the motion trail still works. */
+static void art_robot(Cv *c, const Pose *p, const Rig *rig, double lv,
+                      int ghost, double turn, double now, const Kit *k)
+{
+    double t = p->th;
+    double shy = p->cy - t * 0.95;
+    int    near = p->ay[0] >= p->ay[1] ? 0 : 1;
+    int    far = 1 - near;
+    Rig    steel = art_mat(rig, 0.58);
+    int    i;
+
+    if (ghost) {
+        int gr = 26, gg = 44, gb = 52;
+        int ga = ghost == 2 ? 64 : 34;
+
+        for (i = 0; i < 2; i++) {
+            cv_taper(c, p->px + (i ? 1.0 : -1.0) * p->hw * 0.5, p->py,
+                     p->kx[i], p->ky[i], t * 0.30, t * 0.24, gr, gg, gb, ga);
+            cv_taper(c, p->kx[i], p->ky[i], p->ax[i], p->ay[i],
+                     t * 0.24, t * 0.16, gr, gg, gb, ga);
+            cv_taper(c, p->cx + (i ? 1.0 : -1.0) * p->sw * 0.86, shy,
+                     p->ex[i], p->ey[i], t * 0.18, t * 0.15, gr, gg, gb, ga);
+            cv_taper(c, p->ex[i], p->ey[i], p->wx[i], p->wy[i],
+                     t * 0.16, t * 0.12, gr, gg, gb, ga);
+        }
+        cv_taper(c, p->px - p->hw * 0.9, p->py, p->cx + p->sw * 0.9, shy,
+                 p->sw * 0.86, p->sw * 0.80, gr, gg, gb, ga);
+        cv_ell(c, p->hx, p->hy, p->hr * 0.9, p->hr, gr, gg, gb, ga);
+        return;
+    }
+
+    /* a contact shadow, same as the dancer's: a machine that floats is a prop */
+    for (i = 0; i < 2; i++)
+        cv_ell_soft(c, p->ax[i], p->ay[i] + t * 0.06, t * 0.56, t * 0.11,
+                    3, 4, 8, 150);
+
+    /* ---- the far leg and arm, laid down behind the chassis ---- */
+    for (i = 0; i < 2; i++) {
+        int s = (i == far) ? 0 : 1;
+        double dim = s ? 1.0 : 0.78;
+        int    rr = (int)(k->leg_r * dim), gg = (int)(k->leg_g * dim);
+        int    bb = (int)(k->leg_b * dim);
+        double hipx = p->px + (i ? 1.0 : -1.0) * p->hw * 0.50;
+
+        if (s)
+            continue;
+        cv_taper(c, hipx, p->py - t * 0.12, p->kx[i], p->ky[i],
+                 t * 0.31, t * 0.25, rr, gg, bb, 255);
+        cv_line(c, hipx - t * 0.18, p->py - t * 0.20, p->kx[i] - t * 0.12,
+                p->ky[i] - t * 0.06, t * 0.045, 190, 220, 226, 80);
+        cv_ball(c, p->kx[i], p->ky[i], t * 0.21, rr, gg, bb,
+                190, 220, 226);
+        cv_ring(c, p->kx[i], p->ky[i], t * 0.21, t * 0.045,
+                140, 226, 240, 190);
+        cv_taper(c, p->kx[i], p->ky[i], p->ax[i], p->ay[i],
+                 t * 0.24, t * 0.17, rr, gg, bb, 255);
+        /* a flat plate for a foot, not a sneaker */
+        cv_poly(c, (double[]){ p->ax[i] - t * 0.26, p->ax[i] + t * 0.28,
+                               p->ax[i] + t * 0.34, p->ax[i] - t * 0.22 },
+                   (double[]){ p->ay[i] - t * 0.11, p->ay[i] - t * 0.11,
+                               p->ay[i] + t * 0.04, p->ay[i] + t * 0.04 }, 4,
+                 rr, gg, bb, 255);
+    }
+    {
+        double sx = p->cx + (far ? 1.0 : -1.0) * p->sw * 0.92;
+
+        cv_taper(c, sx, shy + t * 0.14, p->ex[far], p->ey[far],
+                 t * 0.17, t * 0.14, (int)(k->top_r * 0.78),
+                 (int)(k->top_g * 0.78), (int)(k->top_b * 0.78), 255);
+        cv_ball(c, p->ex[far], p->ey[far], t * 0.15, 70, 84, 90, 190, 220, 226);
+        cv_taper(c, p->ex[far], p->ey[far], p->wx[far], p->wy[far],
+                 t * 0.14, t * 0.11, (int)(k->top_r * 0.78),
+                 (int)(k->top_g * 0.78), (int)(k->top_b * 0.78), 255);
+    }
+
+    /* ---- the chassis: a plate box, with rivets and a core ---- */
+    art_col_shade(c, shy - t * 0.10, p->py + t * 0.12, p->cx, p->px,
+                  p->sw * 1.07, p->sw * 1.02, p->hw * 0.94,
+                  k->top_r, k->top_g, k->top_b, 255, &steel);
+    /* a shoulder yoke and two pauldrons: without them the chassis is a bucket */
+    cv_line(c, p->cx - p->sw * 1.06, shy + t * 0.20, p->cx + p->sw * 1.06,
+            shy + t * 0.20, t * 0.12, 24, 30, 34, 220);
+    for (i = 0; i < 2; i++) {
+        double sgn = i ? 1.0 : -1.0;
+
+        cv_ball(c, p->cx + sgn * p->sw * 1.02, shy + t * 0.24, t * 0.26,
+                k->top_r, k->top_g, k->top_b,
+                clampi(k->top_r + 30, 0, 255), clampi(k->top_g + 34, 0, 255),
+                clampi(k->top_b + 36, 0, 255));
+    }
+    /* a hip block and the waist joint that lets the machine turn */
+    cv_ell(c, p->px, p->py + t * 0.06, p->hw * 0.78, t * 0.16,
+           clampi(k->leg_r - 8, 0, 255), clampi(k->leg_g - 8, 0, 255),
+           clampi(k->leg_b - 8, 0, 255), 255);
+    cv_ring(c, p->px, p->py - t * 0.02, p->hw * 0.72, t * 0.05,
+            150, 216, 228, 150);
+    cv_line(c, p->cx - p->sw * 0.98, shy + t * 1.02, p->cx + p->sw * 0.98,
+            shy + t * 1.02, t * 0.09, 26, 32, 36, 210);
+    cv_line(c, p->cx - p->sw * 0.98, shy + t * 1.10, p->cx + p->sw * 0.98,
+            shy + t * 1.10, t * 0.035, 170, 196, 202, 90);
+    cv_line(c, p->cx - p->sw * 1.02, shy + t * 0.12, p->cx + p->sw * 1.02,
+            shy + t * 0.12, t * 0.13, 210, 230, 234, 90);
+    cv_line(c, p->px - p->hw * 0.92, p->py + t * 0.03, p->px + p->hw * 0.92,
+            p->py + t * 0.03, t * 0.10, 24, 30, 34, 190);
+    for (i = 0; i < 4; i++) {
+        double rx = p->cx + ((double)i - 1.5) * p->sw * 0.46;
+
+        cv_ball(c, rx, shy + t * 0.34, t * 0.045, 120, 140, 146, 230, 240, 244);
+    }
+    {
+        int    r, g, b;
+        double cr = p->cx, cy2 = shy + t * 0.62;
+
+        art_col(0.55, &r, &g, &b);
+        cv_ring(c, cr, cy2, t * 0.20, t * 0.055, r, g, b, 220);
+        cv_ball(c, cr, cy2, t * 0.15, r, g, b, 255, 255, 255);
+        cv_soft(c, cr, cy2, t * 0.58, r, g, b, (int)(40 + 80 * lv));
+    }
+
+    /* ---- the head: a box with a visor and an antenna ---- */
+    {
+        double hr = p->hr, hx = p->hx, hy = p->hy;
+        double sk = 0.55 * turn;
+        double xs[4] = { hx - hr * 0.92 + sk * hr * 0.34,
+                         hx + hr * 0.92 + sk * hr * 0.34,
+                         hx + hr * 0.92 - sk * hr * 0.34,
+                         hx - hr * 0.92 - sk * hr * 0.34 };
+        double ys[4] = { hy - hr * 1.00, hy - hr * 1.00,
+                         hy + hr * 0.94, hy + hr * 0.94 };
+
+        cv_taper(c, p->nx, shy + t * 0.04, hx, hy + hr * 0.92,
+                 t * 0.26, t * 0.30, (int)(k->top_r * 0.7),
+                 (int)(k->top_g * 0.7), (int)(k->top_b * 0.7), 255);
+        cv_poly(c, xs, ys, 4, clampi(k->top_r + 20, 0, 255),
+                clampi(k->top_g + 24, 0, 255), clampi(k->top_b + 26, 0, 255),
+                255);
+        cv_poly(c, (double[]){ xs[3], xs[2], xs[2], xs[3] },
+                   (double[]){ ys[0], ys[1], ys[2], ys[3] }, 4,
+                30, 38, 42, 90);
+        /* the visor slit, with the scan line running through it */
+        cv_rect(c, cv_i(hx - hr * 0.70 + sk * hr * 0.2), cv_i(hy - hr * 0.20),
+                cv_i(hr * 1.40), cv_i(hr * 0.32), 16, 30, 34, 255);
+        cv_line(c, hx - hr * 0.64 + sk * hr * 0.2, hy - hr * 0.06,
+                hx + hr * 0.64 + sk * hr * 0.2, hy - hr * 0.06,
+                hr * 0.16, 150, 250, 255, 240);
+        cv_soft(c, hx + sk * hr * 0.2, hy - hr * 0.06, hr * 1.00,
+                120, 230, 255, 80);
+        /* the antenna, with its bead ticking on the beat */
+        cv_line(c, hx + hr * 0.52, hy - hr * 0.94, hx + hr * 0.52,
+                hy - hr * 1.52, hr * 0.06, 130, 146, 150, 255);
+        cv_ball(c, hx + hr * 0.52, hy - hr * 1.56, hr * 0.11,
+                250, 120, 90, 255, 200, 160);
+        cv_soft(c, hx + hr * 0.52, hy - hr * 1.56, hr * 0.34, 255, 140, 100,
+                (int)(40 + 40 * fabs(fsind(now * 6.0))));
+    }
+
+    /* ---- the near leg and arm, over the chassis ---- */
+    for (i = 0; i < 2; i++) {
+        double hipx = p->px + (i ? 1.0 : -1.0) * p->hw * 0.50;
+
+        if (i != near)
+            continue;
+        cv_taper(c, hipx, p->py - t * 0.12, p->kx[i], p->ky[i],
+                 t * 0.33, t * 0.26, k->leg_r, k->leg_g, k->leg_b, 255);
+        cv_line(c, hipx - t * 0.20, p->py - t * 0.22, p->kx[i] - t * 0.13,
+                p->ky[i] - t * 0.06, t * 0.05, 214, 236, 240, 95);
+        cv_ball(c, p->kx[i], p->ky[i], t * 0.22, k->leg_r, k->leg_g, k->leg_b,
+                200, 230, 236);
+        cv_ring(c, p->kx[i], p->ky[i], t * 0.22, t * 0.05,
+                160, 236, 248, 210);
+        cv_taper(c, p->kx[i], p->ky[i], p->ax[i], p->ay[i],
+                 t * 0.25, t * 0.18, k->leg_r, k->leg_g, k->leg_b, 255);
+        cv_poly(c, (double[]){ p->ax[i] - t * 0.26, p->ax[i] + t * 0.28,
+                               p->ax[i] + t * 0.34, p->ax[i] - t * 0.22 },
+                   (double[]){ p->ay[i] - t * 0.11, p->ay[i] - t * 0.11,
+                               p->ay[i] + t * 0.04, p->ay[i] + t * 0.04 }, 4,
+                 k->shoe_r, k->shoe_g, k->shoe_b, 255);
+    }
+    {
+        double sx = p->cx + (near ? 1.0 : -1.0) * p->sw * 0.94;
+        int    r, g, b;
+
+        cv_ball(c, sx, shy + t * 0.14, t * 0.18, k->top_r, k->top_g, k->top_b,
+                210, 236, 240);
+        cv_taper(c, sx, shy + t * 0.14, p->ex[near], p->ey[near],
+                 t * 0.19, t * 0.15, k->top_r, k->top_g, k->top_b, 255);
+        cv_ball(c, p->ex[near], p->ey[near], t * 0.16, 80, 96, 102, 210, 236, 240);
+        cv_ring(c, p->ex[near], p->ey[near], t * 0.16, t * 0.04,
+                160, 236, 248, 190);
+        cv_taper(c, p->ex[near], p->ey[near], p->wx[near], p->wy[near],
+                 t * 0.15, t * 0.12, k->top_r, k->top_g, k->top_b, 255);
+        /* a two-finger claw, opened by the beat */
+        art_col(0.7, &r, &g, &b);
+        cv_line(c, p->wx[near], p->wy[near],
+                p->wx[near] - t * 0.11, p->wy[near] + t * 0.15,
+                t * 0.05, r, g, b, 235);
+        cv_line(c, p->wx[near], p->wy[near],
+                p->wx[near] + t * 0.07, p->wy[near] + t * 0.16,
+                t * 0.05, r, g, b, 235);
+    }
+}
+
+/* The skirt and the ribbon the turn throws off. Drawn over the body, because a
+ * skirt is over the legs, and layered by panel so one still frame carries the
+ * rotation: fourteen panels, each lit by where it is in the spin. */
+static void dance_skirt(Cv *c, const Pose *p, double t, double lv,
+                        const Kit *k)
+{
+    double th = p->th;
+    int    cr = clampi(k->top_r + 8, 0, 255), cg = clampi(k->top_g + 40, 0, 255);
+    int    cb = clampi(k->top_b + 56, 0, 255);
+    double spin = t * 3.0;
+    double waist = p->py - th * 0.36;
+    double hem   = p->py + th * 0.88;
+    double rr = p->hw * (1.55 + 0.45 * fabs(fsind(spin)));
+    int    i;
+
+    for (i = 0; i < 14; i++) {
+        double a0 = -1.05 + 2.10 * (double)i / 14.0;
+        double a1 = -1.05 + 2.10 * (double)(i + 1) / 14.0;
+        double sh = 0.52 + 0.48 * (0.5 + 0.5 * fsind(spin + (double)i * 0.85));
+        double x0 = p->px + a0 * rr, x1 = p->px + a1 * rr;
+        double xs[4] = { p->px + a0 * p->hw * 0.94, p->px + a1 * p->hw * 0.94,
+                         x1, x0 };
+        double ys[4] = { waist, waist,
+                         hem - th * 0.05 * fabs(a1),
+                         hem - th * 0.05 * fabs(a0) };
+
+        cv_poly(c, xs, ys, 4, (int)(cr * sh), (int)(cg * sh),
+                (int)(cb * sh), 232);
+        cv_line(c, x0, ys[3], x1, ys[2], th * 0.030, 255, 198, 206,
+                (int)(80 * sh));
+    }
+    /* the hem, and the shadow the skirt casts on the boards */
+    cv_ell_soft(c, p->px, hem + th * 0.06, rr * 1.05, th * 0.12, 20, 8, 20, 70);
+    for (i = 0; i < 40; i++) {
+        double u = (double)i / 39.0;
+        double ang = spin * 1.35 - u * 4.4;
+        double rad = p->hw * (2.35 + 2.30 * u);
+        double x = p->px + cos(ang) * rad;
+        double y = p->cy + sin(ang) * rad * 0.52 + (u - 0.5) * th * 1.5;
+
+        cv_soft(c, x, y, th * (0.13 - 0.06 * u), 255, 200, 214,
+                (int)((120 + 60 * lv) * (1.0 - u)));
+    }
+}
+
 static void dance_pose(Cv *c, const UiModel *m, int style)
 {
     double t = m->elapsed_sec;
@@ -4262,6 +4832,14 @@ static void dance_pose(Cv *c, const UiModel *m, int style)
                     232, 236, 248, 62, 42, 36 };
     Kit    mate = { 142, 96, 74, 44, 146, 160, 20, 18, 32,
                     198, 204, 224, 48, 34, 30 };
+    /* the machine's wardrobe is a paint job: a face plate, a chassis, limbs,
+     * plates and the antenna housing */
+    Kit    steel  = { 128, 146, 152, 104, 120, 128, 78, 92, 98,
+                      150, 160, 166, 138, 150, 158 };
+    Kit    steel2 = { 108, 126, 132, 86, 100, 108, 62, 74, 80,
+                      126, 136, 142, 116, 126, 134 };
+    int    is_robot = style == VIS_STYLE_DANCE2;
+    int    is_spin  = style == VIS_STYLE_DANCE3;
 
     /* the light in the room, sampled from the music: the key is the cold front
      * light and the fill is whatever the wall is doing right now */
@@ -4282,7 +4860,9 @@ static void dance_pose(Cv *c, const UiModel *m, int style)
         double turn2, tail2;
         int    s;
 
-        for (s = 0; s < 2; s++) {
+        /* A spin is a solo: three figures on the stage is a chorus, and the
+         * turn only reads if there is one body doing it. */
+        for (s = 0; s < (is_spin ? 0 : 2); s++) {
             double off = s ? 0.212 : -0.238;
             double dt  = s ? 1.31 : -1.74;
             double H2  = leadH * (s ? 0.605 : 0.565);
@@ -4292,15 +4872,25 @@ static void dance_pose(Cv *c, const UiModel *m, int style)
                         H2, g2, bp, &turn2, &tail2);
             /* a glow behind each performer: the wall is bright enough to eat a
              * figure that has nothing separating it from the panels */
-            cv_ell_soft(c, q.cx, (q.cy + q.hy) * 0.5, H2 * 0.30, H2 * 0.42,
-                        120, 190, 240, 22);
+            if (is_robot)
+                cv_ell_soft(c, q.cx, (q.cy + q.hy) * 0.5, H2 * 0.30, H2 * 0.42,
+                            190, 210, 180, 16);
+            else
+                cv_ell_soft(c, q.cx, (q.cy + q.hy) * 0.5, H2 * 0.30, H2 * 0.42,
+                            120, 190, 240, 22);
             art_figure_shadow(c, &q, g2, lv * 0.5);
             pose_mirror(&qm, &q, g2, 0.60);
-            art_dancer2(c, &qm, &rig, lv, 2, turn2, tail2, t + dt, &mate);
-            art_dancer2(c, &q, &rig, lv, 0, turn2, tail2, t + dt, &mate);
+            if (is_robot) {
+                art_robot(c, &qm, &rig, lv, 2, turn2, t + dt, &steel2);
+                art_robot(c, &q, &rig, lv, 0, turn2, t + dt, &steel2);
+            } else {
+                art_dancer2(c, &qm, &rig, lv, 2, turn2, tail2, t + dt, &mate);
+                art_dancer2(c, &q, &rig, lv, 0, turn2, tail2, t + dt, &mate);
+            }
         }
         /* depth: everything behind the lead is pushed back a stop */
-        cv_rect(c, 0, 0, c->w, c->h, 3, 4, 11, 40);
+        if (!is_robot && !is_spin)
+            cv_rect(c, 0, 0, c->w, c->h, 3, 4, 11, 40);
     }
 
     dance_build(&p, t, lv, w, h, style, w * 0.5, leadH, ground, bp,
@@ -4337,11 +4927,27 @@ static void dance_pose(Cv *c, const UiModel *m, int style)
         Pose m2;
 
         pose_mirror(&m2, &p, ground, 0.62);
-        art_dancer2(c, &m2, &rig, lv, 2, turn, tail, t, &lead);
+        if (is_robot)
+            art_robot(c, &m2, &rig, lv, 2, turn, t, &steel);
+        else
+            art_dancer2(c, &m2, &rig, lv, 2, turn, tail, t, &lead);
     }
 
-    /* motion: two earlier selves, flat and faint, so a fast move smears */
-    if (c->w >= 900) {
+    /* motion: earlier selves, flat and faint, so a fast move smears. A spin
+     * gets six of them, a frame apart, because the turn is the whole look. */
+    if (is_spin) {
+        int    k;
+        double turn2, tail2;
+
+        for (k = 5; k >= 1; k--) {
+            Pose   g2;
+            double dt = -0.055 * (double)k;
+
+            dance_build(&g2, t + dt, lv, w, h, style,
+                        w * 0.5, leadH, ground, bp, &turn2, &tail2);
+            art_dancer2(c, &g2, &rig, lv, 1, turn2, 1.0, t + dt, &lead);
+        }
+    } else if (c->w >= 900) {
         int    k;
         double turn2, tail2;
 
@@ -4350,12 +4956,23 @@ static void dance_pose(Cv *c, const UiModel *m, int style)
 
             dance_build(&g2, t - 0.030 * (double)k, lv, w, h, style,
                         w * 0.5, leadH, ground, bp, &turn2, &tail2);
-            art_dancer2(c, &g2, &rig, lv, 1, turn2, tail2,
-                        t - 0.030 * (double)k, &lead);
+            if (is_robot)
+                art_robot(c, &g2, &rig, lv, 1, turn2,
+                          t - 0.030 * (double)k, &steel);
+            else
+                art_dancer2(c, &g2, &rig, lv, 1, turn2, tail2,
+                            t - 0.030 * (double)k, &lead);
         }
     }
 
-    art_dancer2(c, &p, &rig, lv, 0, turn, tail, t, &lead);
+    if (is_robot)
+        art_robot(c, &p, &rig, lv, 0, turn, t, &steel);
+    else
+        art_dancer2(c, &p, &rig, lv, 0, turn, tail, t, &lead);
+
+    /* the spin gets its skirt and the ribbon the turn throws off */
+    if (is_spin)
+        dance_skirt(c, &p, t, lv, &lead);
 
     /* the performer's own spill on the boards, in front of the shadow */
     cv_ell_soft(c, p.px, ground - p.th * 0.20, p.th * 3.4, p.th * 0.60,
@@ -4581,35 +5198,8 @@ static int s_rv_base_w, s_rv_base_h;
 static unsigned s_cache_gen = 1;
 static unsigned s_rv_base_gen;
 
-/* ---- A3 counters ------------------------------------------------------
- * Instrumentation only: one increment per call on the two staging sites, no
- * allocation, no path change. Emitted through log_msg at a slow cadence so
- * app.log keeps the numbers next to the step decisions. */
-static void a3_emit(void)
-{
-    if (!s_a3_frames)
-        return;
-    log_msg(LOG_INFO, "a3",
-            "A3COUNTERS style=%d step=%d frames=%llu rv_calls=%llu rv_bytes=%llu "
-            "rv_bakes=%llu rv_alloc_fail=%llu pr_calls=%llu pr_upscales=%llu "
-            "pr_upscale_bytes=%llu pr_uploads=%llu pr_upload_bytes=%llu "
-            "pr_texcreates=%llu pr_copies=%llu",
-            s_a3_style, s_a3_step, s_a3_frames, s_a3_rv_calls, s_a3_rv_bytes,
-            s_a3_rv_bakes, s_a3_rv_alloc_fail, s_a3_pr_calls, s_a3_pr_upscales,
-            s_a3_pr_upscale_bytes, s_a3_pr_uploads, s_a3_pr_upload_bytes,
-            s_a3_pr_texcreates, s_a3_pr_copies);
-    s_a3_rv_calls = s_a3_rv_bakes = s_a3_rv_alloc_fail = 0;
-    s_a3_rv_bytes = 0;
-    s_a3_pr_calls = s_a3_pr_upscales = s_a3_pr_uploads = 0;
-    s_a3_pr_texcreates = s_a3_pr_copies = 0;
-    s_a3_pr_upscale_bytes = s_a3_pr_upload_bytes = 0;
-    s_a3_frames = 0;
-}
-
 void vis_art_cache_invalidate(void)
 {
-    if (s_a3_frames)
-        a3_emit();
     s_cache_gen++;
 }
 
@@ -4623,10 +5213,7 @@ static void rv_base_bake(Cv *b)
 
 static void rv_base(Cv *c)
 {
-    Cv     b;
-    size_t n;
-
-    s_a3_rv_calls++;
+    Cv b;
 
     if (s_rv_base_gen != s_cache_gen ||
         s_rv_base_w != c->w || s_rv_base_h != c->h || !s_rv_base.p) {
@@ -4636,7 +5223,6 @@ static void rv_base(Cv *c)
         s_rv_base_w = s_rv_base.p ? c->w : 0;
         s_rv_base_h = s_rv_base.p ? c->h : 0;
         if (!s_rv_base.p) {
-            s_a3_rv_alloc_fail++;
             rv_base_bake(c);
             return;
         }
@@ -4644,11 +5230,8 @@ static void rv_base(Cv *c)
         b.w = c->w;
         b.h = c->h;
         rv_base_bake(&b);
-        s_a3_rv_bakes++;
     }
-    n = (size_t)c->w * (size_t)c->h * 4;
-    s_a3_rv_bytes += (unsigned long long)n;
-    memcpy(c->p, s_rv_base.p, n);
+    memcpy(c->p, s_rv_base.p, (size_t)c->w * (size_t)c->h * 4);
 }
 
 /* ---- quarter-resolution soft layers (Stage B) ---------------------------
@@ -7655,47 +8238,101 @@ static void art_stage(Cv *c, const UiModel *m, int rt, int gt, int bt)
  * little to the side. The console gets a real perspective row instead of a
  * band of rectangles: every column has a lit face, a shaded side, a white-hot
  * cap and its own reflection in the polished floor. */
+/* --------------------------------------------------------------- spectrum -- */
+
+/* A prism on a rock in a night sea. One white beam enters from the left, and
+ * the light leaves as a fan of coloured rays: each ray's reach, width and
+ * brightness are one band, so the spectrum is something the light does rather
+ * than a row of columns standing in a room. The sea carries the fan back up. */
+/* --------------------------------------------------------------- spectrum -- */
+
+/* A glass prism standing in a night sea. One white beam goes in from the left;
+ * the light comes out as a fan of coloured rays, each ray's reach and brightness
+ * one band. The sea returns the fan upside down. */
+/* --------------------------------------------------------------- spectrum -- */
+
+/* A glass prism standing in a night sea. One white beam goes in from the left;
+ * the light comes out as a fan of coloured rays, each ray's reach and brightness
+ * one band. The sea returns the fan upside down. */
 static void art_spectrum(Cv *c, const UiModel *m)
 {
-    const int N = VIS_BANDS;
-    double    t = m->elapsed_sec;
-    Cam       k;
-    int       i;
+    const int N = 44;
+    double t = m->elapsed_sec;
+    double w = (double)c->w, h = (double)c->h;
+    double horiz = h * 0.76;
+    double bx = w * 0.32, by = h * 0.78;          /* the prism's base       */
+    double ay = by - h * 0.40;                    /* its apex              */
+    double ox = bx, oy = by - h * 0.20;           /* where the light leaves */
+    int    i;
 
-    s_fog_near = 9.0;
-    s_fog_far  = 30.0;
-    s_fog_r = 10; s_fog_g = 14; s_fog_b = 26;
-    cam_make(&k, 0.10 * fsind(t * 0.19), -0.10, (double)c->h * 1.30,
-             (double)c->w * 0.5, (double)c->h * 0.56, 0.5, 1.9, -3.2);
-    art_stage3(c, &k, m, 10, 13, 25);
+    /* night air, a scatter of stars, a cold haze behind the glass */
+    cv_vgrad(c, 0, 0, c->w, c->h, 3, 5, 13, 10, 14, 30);
+    fx_stars(c, t, 120, horiz);
+    cv_soft(c, bx, ay + h * 0.10, w * 0.55, 18, 26, 58, 96);
 
+    /* the sea */
+    cv_rect(c, 0, (int)horiz, c->w, c->h - (int)horiz, 4, 7, 15, 255);
+    cv_vgrad(c, 0, (int)horiz, c->w, c->h - (int)horiz, 11, 17, 34, 2, 3, 9);
+    cv_rect(c, 0, (int)horiz - 2, c->w, 2, 54, 78, 120, 170);
+    for (i = 0; i < 22; i++) {
+        double yy = horiz + (h - horiz) * pow((double)i / 22.0, 1.6);
+        cv_line(c, 0.0, yy, w, yy, 1.2, 36, 56, 90, 30);
+    }
+
+    /* the rock, and its shadow on the water */
+    cv_poly(c, (double[]){ bx - w * 0.16, bx, bx + w * 0.16 },
+               (double[]){ by + h * 0.10, by - h * 0.015, by + h * 0.10 },
+            3, 13, 15, 24, 255);
+    cv_ell_soft(c, bx, by + h * 0.07, w * 0.20, h * 0.035, 2, 3, 7, 120);
+
+    /* the glass: three shells, so the edges carry thickness */
+    cv_poly(c, (double[]){ bx, bx - w * 0.115, bx + w * 0.115 },
+               (double[]){ ay, by, by }, 3, 58, 96, 138, 58);
+    cv_poly(c, (double[]){ bx, bx - w * 0.082, bx + w * 0.082 },
+               (double[]){ ay + h * 0.048, by - h * 0.010, by - h * 0.010 },
+            3, 116, 168, 212, 46);
+    cv_line(c, bx, ay, bx - w * 0.115, by, 2.0, 176, 216, 244, 175);
+    cv_line(c, bx, ay, bx + w * 0.115, by, 2.0, 176, 216, 244, 175);
+    cv_line(c, bx - w * 0.115, by, bx + w * 0.115, by, 1.6, 140, 182, 216, 130);
+    cv_line(c, bx - w * 0.055, by - h * 0.060, bx + w * 0.020, by - h * 0.270,
+            1.6, 244, 252, 255, 150);
+
+    /* the beam going in */
+    cv_line(c, 0.0, by - h * 0.275, bx - w * 0.048, by - h * 0.150,
+            h * 0.022, 100, 132, 176, 36);
+    cv_line(c, 0.0, by - h * 0.275, bx - w * 0.048, by - h * 0.150,
+            h * 0.006, 240, 248, 255, 190);
+
+    /* the fan */
     for (i = 0; i < N; i++) {
-        double u = (double)i / (double)(N - 1);
-        double v = band_at(m, u);
-        double pv = (double)s_peak[i];
-        double x = -9.8 + u * 19.6;
-        double hgt = 0.30 + 5.8 * (0.05 + 0.95 * v);
+        double u   = (double)i / (double)(N - 1);
+        double v   = band_at(m, u);
+        double ang = -1.44 + 1.26 * u;
+        double len = h * (0.16 + 0.52 * v);
+        double ex  = ox + cos(ang) * len;
+        double ey  = oy + sin(ang) * len;
+        double fl  = 0.74 + 0.26 * sin(t * 1.7 + u * 9.0);
         int    cr, cg, cb;
 
         art_col(u, &cr, &cg, &cb);
-        box3(c, &k, x, 0.0, 11.0, 0.30, hgt, 0.30, cr, cg, cb, 250, 1);
-        box3(c, &k, x, hgt, 11.0, 0.33, 0.10, 0.33, 250, 252, 255, 230, 0);
-        /* the peak marker takes the column's own colour: a row of white flags
-         * on top of coloured glass was the one thing in this look that did not
-         * belong to it */
-        if (pv > v + 0.03)
-            box3(c, &k, x, 0.30 + 5.8 * (0.05 + 0.95 * pv), 11.0,
-                 0.30, 0.05, 0.30,
-                 clampi(cr + 90, 0, 255), clampi(cg + 90, 0, 255),
-                 clampi(cb + 90, 0, 255), 120, 0);
+        cv_line(c, ox, oy, ex, ey, h * (0.022 + 0.042 * v),
+                cr, cg, cb, (int)((18 + 22 * fl) * (0.5 + 0.9 * v)));
+        cv_line(c, ox, oy, ex, ey, h * 0.007,
+                clampi(cr + 80, 0, 255), clampi(cg + 80, 0, 255),
+                clampi(cb + 80, 0, 255), (int)((110 + 110 * fl) * (0.4 + 0.8 * v)));
+        cv_soft(c, ex, ey, h * (0.020 + 0.016 * v), cr, cg, cb,
+                (int)(60 + 110 * v));
+        /* one bead of light out along each ray, so the fan has depth */
+        cv_ball(c, ox + (ex - ox) * 0.62, oy + (ey - oy) * 0.62,
+                h * 0.004, cr, cg, cb, 255, 255, 245);
     }
+    cv_ball(c, ox, oy, h * 0.014, 244, 250, 255, 255, 255, 255);
+    cv_soft(c, ox, oy, h * 0.10, 210, 232, 255, 120);
 
-    /* the light the columns throw on the floor, and the dust in it */
-    cv_ell_soft(c, (double)c->w * 0.5, (double)c->h * 0.84,
-                (double)c->w * 0.40, (double)c->h * 0.055,
-                60, 120, 200, (int)(26 + 34 * (double)m->vis_level));
-    art_sparks(c, m, 0.0, (double)c->w, (double)c->h * 0.06,
-               (double)c->h * 0.80, 26, 200, 226, 255);
+    /* the sea gives it back */
+    fx_reflect(c, horiz, 0.72, 1.9);
+    cv_ell_soft(c, w * 0.5, h * 0.985, w * 0.50, h * 0.045, 30, 62, 98, 60);
+    art_sparks(c, m, 0.0, w, h * 0.12, h * 0.66, 34, 214, 236, 255);
 }
 
 /* ------------------------------------------------------------------- wave -- */
@@ -7704,511 +8341,563 @@ static void art_spectrum(Cv *c, const UiModel *m)
  * waveform and each with its reflection in the floor. The near rows are wide
  * and bright, the far ones thin and dim, and the whole field shares the
  * floor's point of view. */
+/* A lake at night. The waveform is the far shore: a ridge of light running the
+ * width of the frame, its crest moving with the record, and the water hands it
+ * back upside down with the ripples breaking it up. Stars, mist and two black
+ * trees give it depth; nothing here is a row of traces in a room. */
+static double wv_at(const UiModel *m, double u)
+{
+    double f, fr;
+    int    i0, i1;
+
+    u = u - floor(u);
+    f = u * (double)(VIS_WAVE - 1);
+    i0 = (int)f;
+    i1 = (i0 + 1) % VIS_WAVE;
+    fr = f - (double)i0;
+    return (double)m->vis_wave[i0] * (1.0 - fr) + (double)m->vis_wave[i1] * fr;
+}
+
 static void art_wave(Cv *c, const UiModel *m)
 {
-    const int ROWS = 18, SEG = 56;
-    double    t = m->elapsed_sec;
-    Cam       k;
-    int       r, i;
+    const int N = 190;
+    double t  = m->elapsed_sec;
+    double lv = (double)m->vis_level;
+    double w  = (double)c->w, h = (double)c->h;
+    double horizon = h * 0.62;
+    double px[N], py[N];
+    int    i, k;
 
-    s_fog_near = 4.0;
-    s_fog_far  = 34.0;
-    s_fog_r = 9; s_fog_g = 12; s_fog_b = 24;
-    cam_make(&k, 0.17 * fsind(t * 0.11), -0.24, (double)c->h * 1.18,
-             (double)c->w * 0.5, (double)c->h * 0.58, 0.0, 2.4, -2.0);
-    art_stage3(c, &k, m, 9, 12, 24);
+    /* the sky, and the cold light of a moon behind the ridge */
+    cv_vgrad(c, 0, 0, c->w, c->h, 3, 6, 16, 12, 18, 34);
+    fx_stars(c, t, 150, horizon);
+    cv_soft(c, w * 0.72, horizon - h * 0.10, h * 0.55, 40, 54, 96, 90);
+    cv_ball(c, w * 0.72, horizon - h * 0.34, h * 0.035, 220, 226, 240,
+            255, 255, 255);
 
-    for (r = ROWS - 1; r >= 0; r--) {
-        double z    = 3.4 + (double)r * 1.5;
-        double amp  = 1.1 + (double)r * 0.10;
-        double fogt = (z - s_fog_near) / (s_fog_far - s_fog_near);
-        int    al;
-        double px = 0.0, py = 0.0, qy = 0.0;
-        int    have = 0;
+    /* the ridge: the waveform, sampled across the frame */
+    for (i = 0; i < N; i++) {
+        double u  = (double)i / (double)(N - 1);
+        double s  = wv_at(m, u * 0.9 + 0.05 + 0.02 * sin(t * 0.13));
+        double amp = 0.5 + 0.5 * s;
 
-        if (fogt < 0.0) fogt = 0.0;
-        if (fogt > 1.0) fogt = 1.0;
-        al = (int)(240.0 - 205.0 * fogt);
-
-        for (i = 0; i <= SEG; i++) {
-            double u  = (double)i / (double)SEG;
-            double sx, sy, sz, x, y;
-            int    cr, cg;
-
-            /* Each row is the same waveform at a different depth. When the
-             * phase offset was tiny the rows landed almost on top of each
-             * other and the field moired into a wire mesh; a wider offset and
-             * an amplitude that grows faster down the field fixes it. */
-            y = 1.0 + wave_at(m, u + (double)r * 0.014) * amp;
-            x = -13.0 + u * 26.0;
-            if (!cam_proj(&k, v3(x, y, z), &sx, &sy, &sz)) {
-                have = 0;
-                continue;
-            }
-            /* its own reflection, for the near rows only: far ones put it
-             * off the floor and just add noise */
-            if (r < 14) {
-                double rx, ry, rz;
-
-                /* a reflection that lands off the canvas would draw a long
-                 * diagonal streaking back to the frame edge */
-                if (cam_proj(&k, v3(x, -y, z), &rx, &ry, &rz) && have &&
-                    rx > 0.0 && rx < (double)c->w &&
-                    ry > 0.0 && ry < (double)c->h)
-                    cv_line(c, px, qy, rx, ry, 1.6 - 1.0 * fogt, 40, 110, 190,
-                            al / 4);
-                qy = ry;
-            }
-            if (have) {
-                cr = 70 + (int)(150.0 * u);
-                cg = 165 + (int)(70.0 * u);
-                cv_line(c, px, py, sx, sy, 2.6 - 1.8 * fogt, cr, cg, 255, al);
-            }
-            px = sx;
-            py = sy;
-            have = 1;
-        }
+        px[i] = u * w;
+        py[i] = horizon - h * (0.045 + 0.235 * amp);
     }
 
-    /* the horizon answers the beat, and the crests throw spray into the air */
-    cv_ell_soft(c, (double)c->w * 0.5, (double)c->h * 0.58,
-                (double)c->w * 0.44, (double)c->h * 0.035,
-                90, 160, 230, (int)(18 + 26 * beat_pulse(m)));
-    art_sparks(c, m, 0.0, (double)c->w, (double)c->h * 0.20,
-               (double)c->h * 0.80, 24, 170, 214, 255);
+    /* the land under the ridge, as columns, dark and getting darker downward */
+    for (i = 0; i < N - 1; i++) {
+        int x0 = (int)px[i], x1 = (int)px[i + 1] + 1;
+        int y0 = (int)py[i];
+
+        if (x1 <= x0)
+            x1 = x0 + 1;
+        cv_rect(c, x0, y0, x1 - x0, (int)(horizon - (double)y0) + 1,
+                5, 10, 14, 255);
+        cv_rect(c, x0, y0, x1 - x0, 2, 16, 30, 34, 190);
+    }
+
+    /* the lit crest: one continuous line, its colour running across the frame */
+    for (i = 0; i < N - 1; i++) {
+        double u = (double)i / (double)(N - 1);
+        int    cr, cg, cb;
+
+        art_col(u, &cr, &cg, &cb);
+        cv_line(c, px[i], py[i], px[i + 1], py[i + 1],
+                h * 0.010, cr, cg, cb, 60);
+        cv_line(c, px[i], py[i], px[i + 1], py[i + 1],
+                h * 0.0035, clampi(cr + 90, 0, 255), clampi(cg + 90, 0, 255),
+                clampi(cb + 90, 0, 255), 190);
+        if (i % 3 == 0)
+            cv_soft(c, px[i], py[i], h * (0.012 + 0.016 * lv), cr, cg, cb, 70);
+    }
+
+    /* the water */
+    cv_rect(c, 0, (int)horizon, c->w, c->h - (int)horizon, 4, 8, 16, 255);
+    cv_vgrad(c, 0, (int)horizon, c->w, c->h - (int)horizon, 10, 18, 34, 1, 3, 8);
+    fx_reflect(c, horizon, 0.80, 0.55);
+
+    /* ripples, wider apart toward the near water */
+    for (k = 0; k < 30; k++) {
+        double yy = horizon + (h - horizon) * pow((double)k / 30.0, 1.5);
+        double sw = 0.5 + 0.5 * sin(t * 0.7 + (double)k * 0.9);
+
+        cv_line(c, 0.0, yy, w, yy, 1.0 + 1.4 * sw, 44, 66, 110,
+                (int)(16 + 30 * sw));
+    }
+
+    /* mist on the water, then two black trees for depth */
+    cv_ell_soft(c, w * 0.5, horizon, w * 0.62, h * 0.05, 90, 120, 170, 40);
+    cv_poly(c, (double[]){ w * 0.02, w * 0.075, w * 0.135 },
+               (double[]){ h * 0.84, h * 0.18, h * 0.84 }, 3, 2, 4, 8, 255);
+    cv_poly(c, (double[]){ w * 0.87, w * 0.945, w * 1.01 },
+               (double[]){ h * 0.86, h * 0.26, h * 0.86 }, 3, 2, 4, 8, 255);
+    cv_rect(c, 0, (int)(h * 0.83), c->w, (int)(h * 0.17), 2, 4, 8, 255);
+
+    art_sparks(c, m, 0.0, w, horizon - h * 0.05, horizon + h * 0.20,
+               26, 150, 190, 230);
 }
+
 
 /* ----------------------------------------------------------------- radial --- */
 
+/* The lamp room of a lighthouse: one hot core, glass prisms around it, and
+ * beams sweeping out through the fog over black water. The spokes are the
+ * bands - how many are lit, how far they reach and how fast they turn. */
 static void art_radial(Cv *c, const UiModel *m)
 {
-    double w = (double)c->w, h = (double)c->h;
-    double cx = w * 0.5, cy = h * 0.5;
-    double r0 = (h < w * 0.55 ? h : w * 0.55) * 0.255;
-    double spin = m->elapsed_sec * 0.22;
-    int    i, layer;
-
-    cv_vgrad(c, 0, 0, c->w, c->h, 9, 11, 23, 8, 10, 20);
-    cv_soft(c, cx, cy, r0 * 1.5, 50, 120, 210, 46);
-
-    /* the dial: a ring of small ticks that turns the other way */
-    for (i = 0; i < 96; i++) {
-        double a = -spin * 1.6 + 6.2831853 * (double)i / 96.0;
-        double r1 = r0 * 1.22;
-        double r2 = r1 + ((i % 8 == 0) ? h * 0.035 : h * 0.016);
-        int    al = (i % 8 == 0) ? 150 : 72;
-
-        cv_line(c, cx + cos(a) * r1, cy + sin(a) * r1,
-                cx + cos(a) * r2, cy + sin(a) * r2, 1.4, 130, 180, 235, al);
-    }
-
-    /* the spokes: tapered wedges, drawn three times so each one has a glow, a
-     * body and a hot core instead of being one flat line */
-    for (i = 0; i < VIS_BANDS; i++) {
-        double a0 = spin + 6.2831853 * (double)i / (double)VIS_BANDS;
-        double v = (double)m->vis_bands[i];
-        double len = r0 + h * 0.04 + v * h * 0.235;
-        double half = 0.012 + 0.014 * (1.0 - v);
-        int    cr, cg, cb;
-
-        art_col((double)i / (double)VIS_BANDS, &cr, &cg, &cb);
-
-        for (layer = 0; layer < 3; layer++) {
-            double k0 = layer == 0 ? 1.0 : layer == 1 ? 0.99 : 0.55;
-            double kx0 = layer == 0 ? r0 * 0.98 : r0 + 4.0;
-            double hw = half * (layer == 0 ? 1.7 : layer == 1 ? 1.0 : 0.30);
-            double xs[4], ys[4];
-            int    al = layer == 0 ? 42 : layer == 1 ? 200 : 235;
-            int    r = layer == 2 ? 250 : cr;
-            int    g = layer == 2 ? 252 : cg;
-            int    b = layer == 2 ? 255 : cb;
-
-            xs[0] = cx + cos(a0 - hw) * kx0;
-            ys[0] = cy + sin(a0 - hw) * kx0;
-            xs[1] = cx + cos(a0 + hw) * kx0;
-            ys[1] = cy + sin(a0 + hw) * kx0;
-            xs[2] = cx + cos(a0 + hw * 0.6) * len * k0;
-            ys[2] = cy + sin(a0 + hw * 0.6) * len * k0;
-            xs[3] = cx + cos(a0 - hw * 0.6) * len * k0;
-            ys[3] = cy + sin(a0 - hw * 0.6) * len * k0;
-            cv_poly(c, xs, ys, 4, r, g, b, al);
-        }
-        cv_ball(c, cx + cos(a0) * len, cy + sin(a0) * len, 2.2 + v * 4.2,
-                250, 252, 255, 255, 255, 255);
-    }
-
-    /* a counter-rotating inner ring: half-length spokes between the long
-     * ones, which is what turns a sunburst into a machine */
-    for (i = 0; i < 24; i++) {
-        double a = -spin * 2.2 + 6.2831853 * (double)i / 24.0;
-        double r1 = r0 * 0.52, r2 = r0 * (0.78 + 0.10 * (double)(i % 3));
-
-        cv_line(c, cx + cos(a) * r1, cy + sin(a) * r1,
-                cx + cos(a) * r2, cy + sin(a) * r2, 1.6,
-                130, 190, 245, 105);
-    }
-    /* a dark disc behind the hub, so the spokes stop at a surface */
-    cv_ball(c, cx, cy, r0 * 0.66, 6, 8, 16, 30, 50, 86);
-
-    /* the hub: a shaded sphere sitting in a lit well */
-    cv_soft(c, cx, cy, r0, 30, 80, 150, 90);
-    cv_ring(c, cx, cy, r0 * 0.95, 6.0, 50, 110, 180, 80);
-    cv_ring(c, cx, cy, r0, 2.6, 210, 235, 255, 120);
-    cv_ring(c, cx, cy, r0 * 0.62, 1.2, 120, 175, 230, 70);
-    cv_soft(c, cx, cy, r0 * (0.34 + 0.20 * (double)m->vis_level),
-            120, 200, 255, 150);
-
-    /* an outer ring of running lamps: the dial gets a rim it can turn inside,
-     * and the whole disc reads as a machine rather than a flower */
-    cv_ring(c, cx, cy, r0 * 1.58, 1.2, 90, 150, 210, 46);
-    for (i = 0; i < 28; i++) {
-        double a = -spin * 0.85 + 6.2831853 * (double)i / 28.0;
-        double on = 0.5 + 0.5 * fsind(spin * 2.4 + (double)i);
-
-        cv_soft(c, cx + cos(a) * r0 * 1.58, cy + sin(a) * r0 * 1.58,
-                1.8 + 2.2 * on, 150, 212, 255, (int)(26 + 58 * on));
-    }
-}
-/* ------------------------------------------------------------------ pulse --- */
-
-static void art_pulse(Cv *c, const UiModel *m)
-{
-    double w = (double)c->w, h = (double)c->h;
-    double cx = w * 0.5, cy = h * 0.5;
+    const int N = 56;
+    double t  = m->elapsed_sec;
     double lv = (double)m->vis_level;
-    double rad = (w < h ? w : h) * (0.11 + 0.11 * lv);
+    double w  = (double)c->w, h = (double)c->h;
+    double cx = w * 0.50, cy = h * 0.46;
+    double horiz = h * 0.80;
     int    i, k;
 
-    art_stage(c, m, 10, 10, 24);
-    for (i = 0; i < 48; i++) {
-        double sx = fmod((double)i * 73.7 + (double)(i * i) * 0.31, w);
-        double sy = fmod((double)i * 39.1, h);
-        double tw = 0.5 + 0.5 * sin(m->elapsed_sec * 1.7 + (double)i);
+    cv_vgrad(c, 0, 0, c->w, c->h, 3, 5, 12, 10, 16, 30);
 
-        cv_soft(c, sx, sy, 1.3 + (double)(i % 3) * 0.6, 205, 225, 255,
-                (int)(30 + 70 * tw));
+    /* fog banks, so the beams have something to cut through */
+    for (k = 0; k < 4; k++)
+        cv_ell_soft(c, cx + (double)(k - 2) * w * 0.22, cy + h * 0.12,
+                    w * 0.34, h * 0.10, 60, 76, 104, 34);
+
+    /* the beams: long, wide, and turning */
+    for (k = 0; k < 2; k++) {
+        double a  = t * 0.55 + (double)k * 3.14159265;
+        double ex = cx + cos(a) * w * 0.75;
+        double ey = cy + sin(a) * h * 0.75;
+
+        double dx = ex - cx, dy = ey - cy, dl = sqrt(dx * dx + dy * dy);
+        double nx = -dy / dl, ny = dx / dl;
+        double w0 = h * 0.012, w1 = h * 0.17;
+
+        cv_poly(c, (double[]){ cx + nx * w0, ex + nx * w1,
+                               ex - nx * w1, cx - nx * w0 },
+                   (double[]){ cy + ny * w0, ey + ny * w1,
+                               ey - ny * w1, cy - ny * w0 }, 4,
+                210, 226, 255, (int)(26 + 26 * lv));
+        cv_line(c, cx, cy, ex, ey, 2.0, 255, 255, 245, 70);
     }
 
-    /* rings leaving the orb, thinning as they go */
-    for (i = 0; i < 6; i++) {
-        double ph = fmod(m->elapsed_sec * 0.5 + (double)i * 0.1667, 1.0);
-        double rr = rad * (1.02 + ph * 4.6);
-        int    al = (int)(110 * (1.0 - ph) * (0.30 + lv));
-
-        cv_ring(c, cx, cy, rr, 3.0 * (1.0 - ph) + 0.6, 120, 215, 255, al);
-    }
-
-    cv_soft(c, cx, cy, rad * 2.1, 60, 140, 225, 55);
-    /* the orb itself: dark side, bright side, rim, specular */
-    cv_ball(c, cx, cy, rad * 1.02, 10, 30, 60, 90, 200, 255);
-    cv_ball(c, cx, cy, rad * 0.82, 60, 130, 200, 235, 250, 255);
-    cv_ring(c, cx, cy, rad * 1.0, 1.8, 230, 245, 255, 190);
-
-    /* the meters on either side light their segments one by one */
-    for (i = 0; i < VIS_BANDS; i++) {
-        double v = (double)m->vis_bands[i];
-        double bh = (h * 0.30) * v;
-        double x = cx + rad * 1.9 + (double)i * (w * 0.0115);
+    /* the spokes: each one a band, each one its own colour and reach */
+    for (i = 0; i < N; i++) {
+        double u   = (double)i / (double)(N - 1);
+        double v   = band_at(m, u);
+        double a   = u * 6.2831853 + t * 0.24;
+        double len = h * (0.10 + 0.62 * v) * (0.55 + 0.45 * lv);
+        double ex  = cx + cos(a) * len;
+        double ey  = cy + sin(a) * len;
         int    cr, cg, cb;
 
-        art_col((double)i / (double)VIS_BANDS, &cr, &cg, &cb);
-        for (k = 0; k < 3; k++) {
-            double q = (double)k;
-            double xx = x - q * 1.6;
-
-            cv_round_rect(c, xx, cy - bh - q * 3.0, w * 0.006, bh * 2.0 + q * 6.0,
-                          2.0, k == 2 ? 255 : cr, k == 2 ? 255 : cg,
-                          k == 2 ? 255 : cb, k == 2 ? 26 : 70 + 40 * k);
-        }
-        cv_round_rect(c, x, cy - bh, w * 0.006, bh * 2.0 + 1.0, 2.0,
-                      cr, cg, cb, (int)(140 + 110 * v));
-        cv_round_rect(c, w - x - w * 0.006, cy - bh, w * 0.006, bh * 2.0 + 1.0,
-                      2.0, cr, cg, cb, (int)(140 + 110 * v));
+        art_col(u, &cr, &cg, &cb);
+        cv_line(c, cx, cy, ex, ey, h * (0.004 + 0.020 * v), cr, cg, cb,
+                (int)(50 + 70 * v));
+        cv_line(c, cx, cy, ex, ey, h * 0.0028,
+                clampi(cr + 110, 0, 255), clampi(cg + 110, 0, 255),
+                clampi(cb + 110, 0, 255), (int)(90 + 90 * v));
+        cv_soft(c, ex, ey, h * (0.010 + 0.014 * v), cr, cg, cb, (int)(60 + 90 * v));
     }
 
-    /* the shock of the beat: a ring of sparks thrown off the orb and dying
-     * before the next one lands */
-    {
-        double bp = beat_pulse(m);
-        double spread = 1.0 + 2.6 * (1.0 - bp);
+    /* the prisms of the lens, in front of the light */
+    for (k = 0; k < 9; k++) {
+        double a = (double)k / 9.0 * 6.2831853 + t * 0.24;
+        cv_line(c, cx + cos(a) * h * 0.055, cy + sin(a) * h * 0.055,
+                cx + cos(a) * h * 0.105, cy + sin(a) * h * 0.105,
+                1.6, 190, 220, 255, 120);
+    }
+    cv_ball(c, cx, cy, h * 0.048, 150, 190, 240, 255, 255, 255);
+    cv_soft(c, cx, cy, h * 0.20, 220, 236, 255, 140);
 
-        for (i = 0; i < 20; i++) {
-            double a = 6.2831853 * (double)i / 20.0 + m->elapsed_sec * 0.30;
+    /* black water under it all, carrying the light down */
+    cv_rect(c, 0, (int)horiz, c->w, c->h - (int)horiz, 3, 5, 11, 255);
+    cv_vgrad(c, 0, (int)horiz, c->w, c->h - (int)horiz, 8, 12, 26, 1, 2, 6);
+    fx_reflect(c, horiz, 0.62, 1.2);
+    for (k = 0; k < 14; k++) {
+        double yy = horiz + (h - horiz) * pow((double)k / 14.0, 1.5);
+        cv_line(c, 0.0, yy, w, yy, 1.0, 40, 54, 88, 26);
+    }
+    art_sparks(c, m, 0.0, w, h * 0.06, h * 0.72, 30, 210, 226, 255);
+}
 
-            cv_soft(c, cx + cos(a) * rad * spread,
-                    cy + sin(a) * rad * spread * 0.94,
-                    1.4 + 2.6 * bp, 180, 232, 255, (int)(52 * bp));
-        }
+/* ------------------------------------------------------------------ pulse --- */
+
+/* A flooded tunnel with a heart of light at the end of it. The core beats with
+ * the level; each beat leaves a ring that runs the length of the tunnel and
+ * breaks up on the water. Steam, drips and wet stone all around it. */
+/* One ellipse drawn as points: the ring pass used to scan a full bounding box
+ * per ring, which is where PULSE's 103 ms went. */
+static void pu_ring(Cv *c, double cx, double cy, double rx, double ry,
+                    int r, int g, int b, int a)
+{
+    int i;
+
+    for (i = 0; i < 200; i++) {
+        double th = (double)i / 200.0 * 6.2831853;
+        cv_set(c, (int)(cx + cos(th) * rx), (int)(cy + sin(th) * ry), r, g, b, a);
     }
 }
+
+/* A flooded tunnel with a heart of light at the end of it. The core beats with
+ * the level; each beat leaves a ring that runs the length of the tunnel and
+ * breaks up on the water. Steam, drips and wet stone all around it. */
+static void art_pulse(Cv *c, const UiModel *m)
+{
+    double t  = m->elapsed_sec;
+    double lv = (double)m->vis_level;
+    double w  = (double)c->w, h = (double)c->h;
+    double cx = w * 0.50, cy = h * 0.46;
+    double beat = fmod(t * 1.15, 1.0);
+    double punch = 1.0 - beat;
+    int    k, i;
+
+    cv_vgrad(c, 0, 0, c->w, c->h, 4, 6, 11, 8, 10, 18);
+
+    /* the tunnel, receding to the light */
+    for (k = 5; k >= 1; k--) {
+        double f  = (double)k / 5.0;
+        double rw = w * (0.11 + 0.30 * f);
+        double rh = h * (0.16 + 0.34 * f);
+
+        pu_ring(c, cx, cy, rw, rh, 26, 30, 40, (int)(120 * (1.0 - f) + 30));
+        pu_ring(c, cx, cy, rw * 0.99, rh * 0.99, 70, 84, 104,
+                (int)(50 * (1.0 - f) + 14));
+    }
+
+    /* the heart */
+    {
+        double rad = h * (0.085 + 0.030 * punch * (0.4 + 0.9 * lv));
+
+        cv_soft(c, cx, cy, rad * 6.0, 120, 40, 30, (int)(40 + 60 * punch));
+        cv_soft(c, cx, cy, rad * 2.4, 220, 80, 50, (int)(70 + 90 * punch));
+        cv_ball(c, cx, cy, rad, 210, 70, 46, 255, 230, 200);
+        cv_soft(c, cx, cy, rad * 0.55, 255, 210, 180, 200);
+    }
+
+    /* the rings leaving the heart, one per beat */
+    for (i = 0; i < 3; i++) {
+        double ph = fmod(beat + (double)i * 0.333, 1.0);
+        double rw = w * (0.12 + 0.34 * ph);
+        double rh = h * (0.14 + 0.36 * ph);
+        int    al = (int)(140 * (1.0 - ph));
+
+        pu_ring(c, cx, cy, rw, rh, 255, 150, 110, al);
+        pu_ring(c, cx, cy, rw * 1.01, rh * 1.01, 255, 200, 170, al / 2);
+    }
+
+    /* the water, carrying the light */
+    cv_rect(c, 0, (int)(h * 0.72), c->w, (int)(h * 0.28), 5, 7, 12, 255);
+    cv_vgrad(c, 0, (int)(h * 0.72), c->w, (int)(h * 0.28), 22, 14, 16, 2, 2, 4);
+    fx_reflect(c, h * 0.72, 0.55, 1.6);
+    for (k = 0; k < 18; k++) {
+        double yy = h * 0.72 + (h * 0.28) * pow((double)k / 18.0, 1.4);
+        double sw = 0.5 + 0.5 * sin(t * 1.3 + (double)k * 0.8);
+
+        cv_line(c, 0.0, yy, w, yy, 1.0 + sw, 120, 70, 60, (int)(14 + 26 * sw));
+    }
+
+    /* steam rolling along the floor, and drips */
+    for (k = 0; k < 5; k++)
+        cv_ell_soft(c, w * (0.16 + 0.17 * (double)k), h * 0.68,
+                    w * 0.16, h * 0.05, 150, 120, 120, 26);
+    for (i = 0; i < 22; i++) {
+        double x = fmod((double)i * 211.7, w);
+        double y = fmod(t * 420.0 + (double)i * 97.0, h * 0.7);
+        cv_line(c, x, y, x, y + h * 0.012, 1.2, 190, 200, 220, 90);
+    }
+}
+
+
 /* ----------------------------------------------------------------- mirror --- */
 
 /* A corridor of lit columns on both walls, drifting past the camera, each one
  * mirrored in the wet floor. Cleared and rebuilt from the farthest column
  * every frame, so the reflections and the columns themselves stay in the right
  * order as they pass. */
+/* A flooded hall: a colonnade at night, warm lamps along it, and still water
+ * taking the whole thing down into the frame. The water is not perfect - a
+ * slow swell breaks the reflection into pieces - and that gap between the hall
+ * and its twin is what the bands move. */
+/* A flooded hall seen down its length: a lit arch at the far end, tall columns
+ * marching toward the viewer, warm lamps on every one of them, and still water
+ * taking the whole thing down into the frame. The swell breaks the reflection
+ * in bands, and that seam is what the music moves. */
 static void art_mirror(Cv *c, const UiModel *m)
 {
-    const int N = 14;
-    double    t = m->elapsed_sec;
-    double    z[N];
-    int       used[N];
-    Cam       k;
-    int       i, s2, step;
+    double t  = m->elapsed_sec;
+    double lv = (double)m->vis_level;
+    double w  = (double)c->w, h = (double)c->h;
+    double horizon = h * 0.52;
+    double vx = w * 0.5, vy = horizon - h * 0.10;
+    int    k, s;
 
-    s_fog_near = 6.0;
-    s_fog_far  = 42.0;
-    s_fog_r = 12; s_fog_g = 14; s_fog_b = 26;
-    cam_make(&k, 0.05 * fsind(t * 0.23), -0.04, (double)c->h * 1.22,
-             (double)c->w * 0.5, (double)c->h * 0.50, 0.0, 2.0, 0.0);
-    art_stage3(c, &k, m, 8, 10, 20);
+    /* the vault */
+    cv_vgrad(c, 0, 0, c->w, (int)horizon, 10, 10, 22, 26, 20, 34);
+    cv_ell_soft(c, vx, vy, w * 0.42, h * 0.26, 60, 44, 70, 120);
 
-    /* a lit slot at the end of the corridor, and the floor's receding lines:
-     * without them the columns float in a void */
-    cv_ell_soft(c, (double)c->w * 0.5, (double)c->h * 0.545,
-                (double)c->w * 0.26, (double)c->h * 0.045, 90, 160, 230, 84);
-    for (i = 1; i < 9; i++) {
-        double yy = (double)c->h * (0.565 + 0.050 * (double)i);
+    /* the far arch, the only daylight in the hall */
+    cv_ell_soft(c, vx, vy + h * 0.03, w * 0.13, h * 0.15, 255, 226, 180, 150);
+    cv_ell_soft(c, vx, vy + h * 0.05, w * 0.06, h * 0.09, 255, 245, 220, 190);
+    cv_rect(c, (int)(vx - w * 0.075), (int)(vy + h * 0.02),
+            (int)(w * 0.15), (int)(horizon - vy), 30, 24, 34, 220);
 
-        cv_line(c, 0.0, yy, (double)c->w, yy, 1.0, 70, 120, 190,
-                (int)(34 - 3 * i));
-    }
+    /* columns, far to near, each with its lamp and its pool of light */
+    for (s = 0; s < 2; s++) {
+        double dir = s ? 1.0 : -1.0;
 
-    /* long light strips in the ceiling, and their smeared twins in the floor:
-     * the corridor now has a room above it as well as a floor below */
-    for (i = 0; i < 2; i++) {
-        double yy = (double)c->h * (0.040 + 0.052 * (double)i);
-        int    al = (int)(34 + 26 * beat_pulse(m));
+        for (k = 0; k < 6; k++) {
+            double f    = (double)k / 5.0;                 /* 0 far, 1 near */
+            double off  = w * (0.055 + 0.40 * f * f);
+            double x    = vx + dir * off;
+            double cw   = w * (0.022 + 0.030 * f);
+            double top  = h * (0.22 - 0.08 * f);
+            double lit  = 0.30 + 0.70 * f;
 
-        cv_line(c, 0.0, yy, (double)c->w, yy, 3.0, 96, 156, 224, al);
-        cv_line(c, 0.0, (double)c->h - yy * 1.7, (double)c->w,
-                (double)c->h - yy * 1.7, 2.0, 70, 130, 200, al / 2);
-    }
+            cv_rect(c, (int)(x - cw * 0.5), (int)top, (int)cw,
+                    (int)(horizon - top), 16, 14, 22, 255);
+            /* the lit edge facing the arch */
+            cv_rect(c, (int)(x - cw * (s ? 0.5 : 0.10)), (int)top,
+                    (int)(cw * 0.22), (int)(horizon - top),
+                    64, 52, 60, (int)(230 * lit));
+            /* the base it stands on */
+            cv_rect(c, (int)(x - cw * 0.7), (int)(horizon - h * 0.012),
+                    (int)(cw * 1.4), (int)(h * 0.030), 22, 18, 26, 255);
 
-    for (i = 0; i < N; i++) {
-        z[i]    = 3.6 + fmod((double)i * 2.5 - t * 1.7 + 400.0, 30.0);
-        used[i] = 0;
-    }
-
-    /* far to near, one column at a time */
-    for (step = 0; step < N; step++) {
-        int    far = -1;
-        double fz  = -1.0;
-
-        for (i = 0; i < N; i++)
-            if (!used[i] && z[i] > fz) { fz = z[i]; far = i; }
-        if (far < 0)
-            break;
-        used[far] = 1;
-
-        {
-            double u   = (double)(far % 7) / 6.0;
-            double v   = band_at(m, u);
-            double hgt = 0.6 + 4.4 * (0.10 + 0.90 * v);
-            int    cr, cg, cb;
-
-            int br, bg2, bb;
-
-            art_col(0.15 + 0.7 * u, &cr, &cg, &cb);
-            /* the body of a column is in shadow: the light is on its edge, its
-             * cap and the pool it throws. Pale slabs in fog was the old look. */
-            br  = (int)((double)cr * 0.70);
-            bg2 = (int)((double)cg * 0.70);
-            bb  = (int)((double)cb * 0.74);
-            for (s2 = -1; s2 <= 1; s2 += 2) {
-                double x0p, y0p, z0p, x1p, y1p, z1p;
-                double inner = 4.6 * (double)s2 - (double)s2 * 0.30;
-
-                box3(c, &k, 4.6 * (double)s2, 0.0, fz, 0.30, hgt, 0.30,
-                     br, bg2, bb, 250, 1);
-                /* The inner edge is where the light is. Without this the
-                 * columns were pale slabs floating in fog; with it each one
-                 * has a lit corner, a hot cap and a pool on the floor. */
-                if (cam_proj(&k, v3(inner, 0.02, fz), &x0p, &y0p, &z0p) &&
-                    cam_proj(&k, v3(inner, hgt, fz), &x1p, &y1p, &z1p)) {
-                    cv_line(c, x0p, y0p, x1p, y1p, 2.4,
-                            clampi(cr + 96, 0, 255), clampi(cg + 74, 0, 255),
-                            clampi(cb + 34, 0, 255), 175);
-                    cv_line(c, x0p, y0p, x1p, y1p, 0.9, 245, 250, 255, 110);
-                    cv_soft(c, x1p, y1p, 15.0, cr, cg, cb, 95);
-                    cv_ell_soft(c, x0p, (double)c->h * 0.962,
-                                (double)c->w * 0.055, (double)c->h * 0.009,
-                                cr, cg, cb, 46);
-                }
-            }
+            /* lamp, and the light it throws on the water */
+            cv_ball(c, x + dir * cw * 0.30, top + h * 0.05, h * 0.011,
+                    255, 206, 140, 255, 255, 230);
+            cv_soft(c, x + dir * cw * 0.30, top + h * 0.05, h * 0.085,
+                    255, 194, 120, (int)(50 * lit + 26));
+            cv_ell_soft(c, x + dir * cw * 0.30, horizon + h * 0.02,
+                        w * (0.03 + 0.05 * f), h * (0.012 + 0.02 * f),
+                        255, 190, 120, (int)(40 + 60 * f));
         }
     }
+
+    /* the water, and the hall upside down */
+    cv_rect(c, 0, (int)horizon, c->w, c->h - (int)horizon, 6, 6, 12, 255);
+    fx_reflect(c, horizon, 0.86, 0.8);
+
+    /* the swell: bands that thicken toward the viewer */
+    for (k = 0; k < 24; k++) {
+        double f  = (double)k / 24.0;
+        double yy = horizon + (h - horizon) * pow(f, 1.25);
+        double sw = 0.5 + 0.5 * sin(t * 0.7 + f * 8.0 + (double)lv * 3.0);
+
+        cv_line(c, 0.0, yy, w, yy, 1.0 + 3.4 * f, 5, 6, 12, (int)(60 * f + 24));
+        if (k % 2 == 0)
+            cv_line(c, 0.0, yy, w, yy, 1.0, 150, 126, 110,
+                    (int)(26 * sw * (0.4 + f)));
+    }
+
+    /* haze on the water, and motes hanging in the light */
+    cv_ell_soft(c, vx, horizon, w * 0.55, h * 0.055, 110, 88, 92, 40);
+    art_sparks(c, m, 0.0, w, horizon - h * 0.22, horizon + h * 0.22,
+               26, 250, 220, 180);
 }
+
+
 
 /* ----------------------------------------------------------------- blocks --- */
 
 /* A voxel city: one tower per band, painted from the back row to the front so
  * the near towers cover the far ones. Height comes from the band, so the city
  * rises and falls with the music instead of lighting up cells in a grid. */
+/* ----------------------------------------------------------------- blocks -- */
+
+/* Not a grid of bars standing in a room: a shell of cubes turning slowly over
+ * a black mirror. Each cube breathes and brightens with its own band, the far
+ * ones sink into the haze, and the floor returns the whole swarm upside down. */
+/* ----------------------------------------------------------------- blocks -- */
+
+/* A shell of cubes turning slowly over a black mirror. Each cube breathes and
+ * brightens with its own band, the far ones sink into the haze, and the floor
+ * returns the whole swarm upside down. */
+/* ----------------------------------------------------------------- blocks -- */
+
+/* A shell of cubes turning slowly over a black mirror. Each cube breathes and
+ * brightens with its own band, the far ones sink into the haze, and the floor
+ * returns the whole swarm upside down. */
 static void art_blocks(Cv *c, const UiModel *m)
 {
-    const int COLS = 10, ROWS = 6;
-    double    t = m->elapsed_sec;
-    Cam       k;
-    int       ix, iz;
+    const int N = 122;
+    double t  = m->elapsed_sec;
+    double lv = (double)m->vis_level;
+    double w  = (double)c->w, h = (double)c->h;
+    double horiz = h * 0.80;
+    double cx = w * 0.5, cy = h * 0.44, rad = h * 0.58;
+    double sx[N], sy[N], depth[N], size[N], val[N];
+    int    order[N];
+    int    i, j, k;
 
-    s_fog_near = 8.0;
-    s_fog_far  = 40.0;
-    s_fog_r = 6; s_fog_g = 8; s_fog_b = 16;
-    cam_make(&k, 0.34 + 0.12 * fsind(t * 0.16), -0.34, (double)c->h * 1.45,
-             (double)c->w * 0.5, (double)c->h * 0.44, 3.4, 8.5, -5.0);
-    art_stage3(c, &k, m, 6, 8, 15);
+    /* the void and the mirror floor */
+    cv_vgrad(c, 0, 0, c->w, c->h, 4, 4, 11, 13, 8, 26);
+    fx_stars(c, t, 80, horiz);
+    cv_rect(c, 0, (int)horiz, c->w, c->h - (int)horiz, 5, 4, 10, 255);
+    for (k = 1; k <= 7; k++) {
+        double yy = horiz + (h - horiz) * pow((double)k / 7.0, 1.7);
+        cv_line(c, 0.0, yy, w, yy, 1.2, 54, 34, 90, 90);
+    }
+    for (k = -7; k <= 7; k++)
+        cv_line(c, w * 0.5 + (double)k * w * 0.048, horiz,
+                w * 0.5 + (double)k * w * 0.26, h, 1.2, 54, 34, 90, 90);
 
-    for (iz = ROWS - 1; iz >= 0; iz--) {
-        for (ix = 0; ix < COLS; ix++) {
-            double u   = (double)ix / (double)(COLS - 1);
-            double v   = band_at(m, u);
-            double rnd = 0.55 + 0.45 * fabs(fsind((double)(ix * 7 + iz * 13)));
-            double x   = ((double)ix - (double)(COLS - 1) * 0.5) * 1.55;
-            double z   = 9.0 + (double)iz * 1.55;
-            double hgt = 0.6 + 4.8 * (0.12 + 0.88 * v) * rnd *
-                               (1.0 - (double)iz * 0.07);
-            int    cr, cg, cb;
+    /* the shell: a Fibonacci sphere, turned, then sorted back to front */
+    for (i = 0; i < N; i++) {
+        double yy = 1.0 - 2.0 * ((double)i + 0.5) / (double)N;
+        double rr = sqrt(1.0 - yy * yy);
+        double ph = (double)i * 2.3999632 + t * 0.33;
+        double x  = cos(ph) * rr;
+        double z  = sin(ph) * rr;
+        double v  = band_at(m, fabs(sin(ph * 0.5)) * 0.9 + 0.05);
+        double br = 1.0 + 0.20 * sin(t * 1.5 + (double)i * 0.7);
+        double sc = rad * br * (0.94 + 0.12 * v);
+        double xr = x * cos(t * 0.22) - z * sin(t * 0.22);
+        double zr = x * sin(t * 0.22) + z * cos(t * 0.22);
+        double df;
 
-            art_col(0.12 + 0.72 * u, &cr, &cg, &cb);
-            box3(c, &k, x, 0.0, z, 0.56, hgt, 0.56, cr, cg, cb, 245, 0);
-            box3(c, &k, x, hgt, z, 0.58, 0.10, 0.58, 250, 246, 255, 190, 0);
+        z = zr;
+        df = (z + 1.0) * 0.5;                     /* 0 near, 1 far */
+        depth[i] = df;
+        val[i]   = v;
+        size[i]  = h * 0.060 * (1.34 - 0.66 * df) * (0.60 + 0.90 * v);
+        sx[i]    = cx + xr * sc * (1.0 - 0.10 * df);
+        sy[i]    = cy + yy * sc * 0.94;
+    }
+    for (i = 0; i < N; i++)
+        order[i] = i;
+    for (i = 1; i < N; i++) {
+        int o = order[i];
+        j = i - 1;
+        while (j >= 0 && depth[order[j]] < depth[o]) {
+            order[j + 1] = order[j];
+            j--;
         }
+        order[j + 1] = o;
     }
 
-    /* three searchlights raking the city: the sky needs something in it, and
-     * this is what makes a voxel field look like a place with weather */
-    for (ix = 0; ix < 3; ix++) {
-        double ox = (double)c->w * (0.24 + 0.26 * (double)ix);
-        double sw = fsind(t * 0.31 + (double)ix * 1.9) * (double)c->w * 0.16;
-        int    k2;
+    for (k = 0; k < N; k++) {
+        int    o = order[k];
+        double d = depth[o], s = size[o], v = val[o];
+        int    cr, cg, cb, dim = (int)(210.0 - 130.0 * d);
 
-        int    col_r, col_g, col_b;
+        art_col(fmod(d * 0.6 + (double)o * 0.013, 1.0), &cr, &cg, &cb);
+        cr = cr * dim / 210;
+        cg = cg * dim / 210;
+        cb = cb * dim / 210;
 
-        art_col(0.12 + 0.30 * (double)ix, &col_r, &col_g, &col_b);
-        for (k2 = 3; k2 >= 0; k2--) {
-            double sp = (double)c->w * (0.006 + 0.016 * (double)k2);
-            int    al = (int)((3.0 + 2.4 * (double)k2)
-                              * (0.30 + 0.7 * (double)m->vis_level));
-
-            cv_poly(c, (double[]){ ox - 2.5, ox + 2.5,
-                                   ox + sw + sp, ox + sw - sp },
-                       (double[]){ 0.0, 0.0, (double)c->h * 0.60,
-                                   (double)c->h * 0.60 }, 4,
-                    col_r, col_g, col_b, al);
-        }
-        cv_line(c, ox, 0.0, ox + sw, (double)c->h * 0.60, 0.8,
-                col_r + 120, col_g + 110, col_b + 100, 60);
+        /* Only the near half of the swarm carries a halo. Measured 2026-11-25 at
+         * 1920x1080: the 122 wide blobs were 63.7 ms a frame, over the 50 ms
+         * budget, and the halo on a block that is 10 px across and dimmed to a
+         * third contributes nothing a viewer can find. */
+        if (d < 0.55)
+            cv_soft(c, sx[o], sy[o], s * 3.6, cr, cg, cb,
+                    (int)((16.0 + 46.0 * v) * (1.0 - 0.50 * d)));
+        cv_rect(c, (int)(sx[o] - s * 0.5), (int)(sy[o] - s * 0.5),
+                (int)s + 1, (int)s + 1, cr, cg, cb, 245);
+        cv_rect(c, (int)(sx[o] - s * 0.5), (int)(sy[o] - s * 0.5),
+                (int)s + 1, (int)(s * 0.24) + 1,
+                clampi(cr + 100, 0, 255), clampi(cg + 100, 0, 255),
+                clampi(cb + 100, 0, 255), 235);
+        cv_rect(c, (int)(sx[o] - s * 0.5), (int)(sy[o] + s * 0.32),
+                (int)s + 1, (int)(s * 0.18) + 1, 0, 0, 0, 130);
     }
+
+    /* the mirror, and the haze the swarm sits in */
+    cv_soft(c, cx, cy, rad * 2.1, 26, 16, 56, (int)(20 + 26 * lv));
+    fx_reflect(c, horiz, 0.86, 0.9);
+    cv_ell_soft(c, cx, horiz, w * 0.55, h * 0.09, 26, 14, 54, 60);
 }
 
-/* ------------------------------------------------------------------ scope --- */
+/* ------------------------------------------------------------------ scope -- */
+
+/* The waveform turned into a Lissajous figure and drawn by one beam on a
+ * phosphor tube. The beam leaves a fading trail, the glass glows, and the
+ * figure moves with the record rather than being a line across the screen. */
+static double sc_wave(const UiModel *m, double u)
+{
+    double f, fr;
+    int    i0, i1;
+
+    u = u - floor(u);
+    f = u * (double)(VIS_WAVE - 1);
+    i0 = (int)f;
+    i1 = (i0 + 1) % VIS_WAVE;
+    fr = f - (double)i0;
+    return (double)m->vis_wave[i0] * (1.0 - fr) + (double)m->vis_wave[i1] * fr;
+}
 
 static void art_scope(Cv *c, const UiModel *m)
 {
-    double mid = (double)c->h * 0.5;
-    double h = (double)c->h;
-    int    i, k;
+    double t  = m->elapsed_sec;
+    double lv = (double)m->vis_level;
+    double w  = (double)c->w, h = (double)c->h;
+    double cx = w * 0.5, cy = h * 0.50;
+    double R  = h * (0.34 + 0.10 * lv);
+    double px = cx, py = cy, hx = cx, hy = cy;
+    int    i, e, k;
 
-    cv_vgrad(c, 0, 0, c->w, c->h, 4, 12, 8, 6, 16, 10);
-    for (i = 0; i < c->w; i += (int)((double)c->w / 10.0) + 1)
-        cv_rect(c, i, 0, 1, c->h, 40, 120, 70, 60);
-    for (i = 0; i < c->h; i += (int)((double)c->h / 6.0) + 1)
-        cv_rect(c, 0, i, c->w, 1, 40, 120, 70, 60);
-    cv_rect(c, 0, (int)mid, c->w, 1, 60, 170, 100, 90);
+    cv_fill(c, 4, 14, 9);
 
-    for (i = 3; i >= 1; i--) {
-        double px_ = 0.0, py_ = 0.0;
+    /* the tube: a green wash in the middle, dark glass at the edge */
+    cv_soft(c, cx, cy, h * 0.95, 14, 54, 32, 86);
+    cv_soft(c, cx, cy, h * 0.55, 20, 74, 44, 60);
+    /* Four bands, not eight: at this thickness the extra four landed on the
+     * same phosphor glow and cost ~14 ms of the frame (measured 2026-11-25). */
+    for (k = 0; k < 4; k++)
+        cv_ring(c, cx, cy, h * (0.62 + 0.104 * (double)k), h * 0.12,
+                0, 3, 1, 30);
 
-        for (k = 0; k < c->w; k++) {
-            double u = (double)k / (double)((c->w > 1) ? c->w - 1 : 1);
-            double idx = u + (double)i * 0.006;
-            double y, x;
+    /* the graticule */
+    for (k = -5; k <= 5; k++) {
+        cv_line(c, cx + (double)k * w * 0.085, cy - R * 1.45,
+                cx + (double)k * w * 0.085, cy + R * 1.45,
+                1.1, 44, 130, 78, 52);
+        cv_line(c, cx - R * 2.30, cy + (double)k * h * 0.075,
+                cx + R * 2.30, cy + (double)k * h * 0.075,
+                1.1, 44, 130, 78, 52);
+    }
 
-            if (idx > 1.0)
-                idx -= 1.0;
-            y = mid - wave_at(m, idx) * h * 0.42;
-            x = (double)k;
-            if (y < 2.0)
-                y = 2.0;
-            if (y > h - 2.0)
-                y = h - 2.0;
-            if (k > 0)
-                cv_line(c, px_, py_, x, y, 2.0, 60, 220, 120, 30 / i);
-            px_ = x;
-            py_ = y;
+    /* the figure and four ghosts of where the beam has just been */
+    for (e = 4; e >= 0; e--) {
+        double ph = t - (double)e * 0.050;
+        int    al = e == 0 ? 200 : (int)(120 / (double)e);
+        double thick = e == 0 ? 3.0 : 2.0;
+        int    cr = e == 0 ? 210 : 90;
+        int    cg = e == 0 ? 255 : 210;
+        int    cb = e == 0 ? 226 : 150;
+
+        px = cx;
+        py = cy;
+        for (i = 0; i <= 220; i++) {
+            double u  = (double)i / 220.0;
+            double a  = u * 12.5663706;
+            double s1 = sc_wave(m, u * 0.5 + 0.12 * sin(ph * 0.7) + (double)e * 0.005);
+            double s2 = sc_wave(m, u * 0.5 + 0.37 + 0.10 * cos(ph * 0.5) + (double)e * 0.005);
+            double x  = cx + cos(a * 1.5 + ph * 0.9) * R * (0.62 + 0.46 * s1);
+            double y  = cy + sin(a * 2.0 + ph * 1.3) * R * (0.62 + 0.46 * s2);
+
+            if (i)
+                cv_line(c, px, py, x, y, thick, cr, cg, cb, al);
+            px = x;
+            py = y;
+            if (e == 0) {
+                cv_soft(c, x, y, 5.0 + 4.0 * lv, 60, 255, 150, 26);
+                hx = x;
+                hy = y;
+            }
         }
     }
-    /* the glass of the tube, a row of faint scanlines leaning on everything */
+
+    /* the beam head */
+    cv_ball(c, hx, hy, h * 0.014, 226, 255, 228, 255, 255, 255);
+    cv_soft(c, hx, hy, h * 0.10, 130, 255, 170, 120);
+    cv_soft(c, hx, hy, h * 0.030, 200, 255, 220, 150);
+
+    /* scanlines and the room's reflection in the front of the glass */
     for (k = 0; k < c->h; k += 3)
-        cv_rect(c, 0, k, c->w, 1, 0, 6, 2, 30);
-
-    {
-        double px_ = 0.0, py_ = 0.0;
-
-        for (k = 0; k < c->w; k++) {
-            double u = (double)k / (double)((c->w > 1) ? c->w - 1 : 1);
-            double y = mid - wave_at(m, u) * h * 0.42;
-            double x = (double)k;
-
-            if (y < 2.0)
-                y = 2.0;
-            if (y > h - 2.0)
-                y = h - 2.0;
-            if (k > 0) {
-                cv_line(c, px_, py_, x, y, 9.0, 40, 200, 90, 26);
-                cv_line(c, px_, py_, x, y, 3.4, 120, 255, 160, 210);
-                cv_line(c, px_, py_, x, y, 1.4, 240, 255, 240, 240);
-            }
-            px_ = x;
-            py_ = y;
-        }
-    }
-
-    /* a second channel, mirrored under the axis at a third of the weight:
-     * the tube now carries a stereo pair the way a real scope does */
-    {
-        double px_ = 0.0, py_ = 0.0;
-
-        for (k = 0; k < c->w; k++) {
-            double u = (double)k / (double)((c->w > 1) ? c->w - 1 : 1);
-            double y = mid + wave_at(m, fmod(u + 0.5, 1.0)) * h * 0.21;
-            double x = (double)k;
-
-            if (k > 0) {
-                cv_line(c, px_, py_, x, y, 2.6, 30, 150, 190, 60);
-                cv_line(c, px_, py_, x, y, 1.2, 90, 230, 240, 130);
-            }
-            px_ = x;
-            py_ = y;
-        }
-    }
-    /* peak dots, one every sixteenth of the screen */
-    for (k = 16; k < c->w - 16; k += 16) {
-        double u  = (double)k / (double)((c->w > 1) ? c->w - 1 : 1);
-        double u0 = (double)(k - 8) / (double)((c->w > 1) ? c->w - 1 : 1);
-        double u1 = (double)(k + 8) / (double)((c->w > 1) ? c->w - 1 : 1);
-        double y  = mid - wave_at(m, u) * h * 0.42;
-        double y0 = mid - wave_at(m, u0) * h * 0.42;
-        double y1 = mid - wave_at(m, u1) * h * 0.42;
-
-        if (y <= y0 && y <= y1) {
-            cv_ball(c, (double)k, y, 2.4, 210, 255, 220, 255, 255, 255);
-            cv_soft(c, (double)k, y, 6.0, 120, 255, 170, 40);
-        }
-    }
-
-    /* the sweep: a cursor riding the trace, with the phosphor bloom a real
-     * tube leaves behind it */
-    {
-        double ph = fmod(m->elapsed_sec * 0.33, 1.0);
-        double x = ph * (double)c->w;
-        double y = mid - wave_at(m, ph) * h * 0.42;
-
-        cv_line(c, x, 0.0, x, (double)c->h, 1.0, 60, 220, 120, 44);
-        cv_soft(c, x, y, 14.0, 120, 255, 170, 90);
-        cv_ball(c, x, y, 3.2, 226, 255, 236, 255, 255, 255);
-    }
+        cv_rect(c, 0, k, c->w, 1, 0, 0, 0, 40);
+    cv_ell_soft(c, cx - w * 0.20, cy - h * 0.34, w * 0.16, h * 0.10,
+                110, 170, 140, 30);
 }
 
 /* ------------------------------------------------------------------ orbit --- */
@@ -8315,63 +9004,110 @@ static void art_orbit(Cv *c, const UiModel *m)
 
 /* ------------------------------------------------------------------- neon --- */
 
+/* A sign, not a ring.
+ *
+ * The old look was a hoop with spikes - RADIAL with a different palette, which
+ * is why it failed its name. This is the thing the name promises: an equalizer
+ * built out of neon tube, bolted to a wet street wall at night, throwing its
+ * color onto the bricks, the rain, the pavement and the steam.
+ *
+ * The board is a dark panel with a tube border. Inside it, one tube per band
+ * stands on a common baseline and grows with its own band, so the sign is the
+ * music. Each tube is three passes - a wide halo, the glass and a white core -
+ * and one of them is always failing, because a neon sign that never buzzes is a
+ * drawing of a neon sign. */
+
+/* A brick alley at night in the rain. One sodium lamp over a doorway, a neon
+ * tube bent into a frame and a slash, water standing in the gap between the
+ * pavements. The tubes are the bands: they light segment by segment and the
+ * puddle takes them back. */
 static void art_neon(Cv *c, const UiModel *m)
 {
-    double w = (double)c->w, h = (double)c->h;
-    double cx = w * 0.5, cy = h * 0.5;
-    double small_ = w < h ? w : h;
-    double ring = small_ * 0.24 + (double)m->vis_level * small_ * 0.06;
+    double t  = m->elapsed_sec;
+    double lv = (double)m->vis_level;
+    double w  = (double)c->w, h = (double)c->h;
+    double ground = h * 0.76;
+    double sx = w * 0.22, sy = h * 0.20;          /* sign, top-left of the frame */
+    double sw2 = w * 0.30, sh2 = h * 0.34;
     int    i, k;
 
-    art_stage(c, m, 4, 6, 16);
+    /* the wall, and the dark the lamp does not reach */
+    cv_vgrad(c, 0, 0, c->w, c->h, 8, 7, 14, 20, 14, 18);
+    cv_soft(c, w * 0.62, h * 0.16, h * 0.55, 90, 60, 30, 70);
 
-    for (k = 6; k >= 1; k--)
-        cv_ring(c, cx, cy, ring, (double)k * 4.0, 30, 120, 230, 26 - k * 3);
-
-    cv_ring(c, cx, cy, ring, 9.0, 24, 70, 170, 255);
-    cv_ring(c, cx, cy, ring, 5.0, 70, 175, 255, 255);
-    cv_ring(c, cx, cy, ring, 1.8, 235, 250, 255, 255);
-
-    for (i = 0; i < 40; i++) {
-        double a0 = m->elapsed_sec * 1.6 + (double)i * 0.02;
-        double a1 = a0 + 0.02;
-
-        cv_line(c, cx + cos(a0) * ring, cy + sin(a0) * ring,
-                cx + cos(a1) * ring, cy + sin(a1) * ring, 9.0,
-                180, 235, 255, 160);
+    /* brickwork: courses, and a mortar line between them */
+    for (k = 0; k < 22; k++) {
+        double yy = (double)k / 22.0 * ground;
+        cv_line(c, 0.0, yy, w, yy, 1.0, 26, 20, 22, 60);
+        for (i = 0; i < 12; i++) {
+            double xx = fmod((double)i * w * 0.09 + (double)(k % 2) * w * 0.045, w);
+            cv_line(c, xx, yy, xx, yy + ground / 22.0, 1.0, 26, 20, 22, 44);
+        }
     }
 
-    for (i = 0; i < VIS_BANDS; i++) {
-        double a = 6.2831853 * (double)i / (double)VIS_BANDS - 1.5707963;
-        double v = (double)m->vis_bands[i];
-        double r0 = ring + 8.0;
-        double r1 = r0 + 6.0 + v * small_ * 0.26;
-        double x0 = cx + cos(a) * r0, y0 = cy + sin(a) * r0;
-        double x1 = cx + cos(a) * r1, y1 = cy + sin(a) * r1;
+    /* the sodium lamp, and the cone it throws on the wall */
+    cv_ball(c, w * 0.62, h * 0.13, h * 0.016, 255, 196, 120, 255, 255, 220);
+    cv_soft(c, w * 0.62, h * 0.13, h * 0.10, 255, 190, 110, 120);
+    cv_poly(c, (double[]){ w * 0.60, w * 0.64, w * 0.78, w * 0.46 },
+               (double[]){ h * 0.14, h * 0.14, ground, ground }, 4,
+            255, 180, 100, 16);
 
-        cv_line(c, x0, y0, x1, y1, 10.0, 30, 90, 200, 40);
-        cv_line(c, x0, y0, x1, y1, 5.0, 70, 175, 255, 200);
-        cv_line(c, x0, y0, x1, y1, 2.0, 240, 252, 255, 230);
-        cv_ball(c, x1, y1, 2.6 + v * 3.0, 235, 250, 255, 255, 255, 255);
+    /* the sign: an outer tube frame, and a slash through it */
+    for (k = 0; k < 4; k++) {
+        double e = (double)k / 3.0;
+        int    cr, cg, cb;
+        double lit = 0.45 + 0.55 * band_at(m, 0.1 + 0.2 * e);
+
+        art_col(0.15 + 0.55 * e, &cr, &cg, &cb);
+        cv_line(c, sx, sy + sh2 * e, sx + sw2, sy + sh2 * e, 3.0,
+                cr, cg, cb, (int)(90 * lit));
+        cv_line(c, sx, sy, sx, sy + sh2, 3.0, cr, cg, cb, (int)(80 * lit));
+        cv_line(c, sx + sw2, sy, sx + sw2, sy + sh2, 3.0, cr, cg, cb,
+                (int)(80 * lit));
+    }
+    cv_line(c, sx, sy, sx + sw2, sy + sh2, 2.2, 90, 240, 220,
+            (int)(120 + 90 * band_at(m, 0.5)));
+    cv_line(c, sx + sw2, sy, sx, sy + sh2, 2.2, 255, 90, 170,
+            (int)(120 + 90 * band_at(m, 0.8)));
+
+    /* the glass halo of the whole sign */
+    for (i = 0; i < 26; i++) {
+        double u = (double)i / 25.0;
+        int    cr, cg, cb;
+
+        art_col(0.15 + 0.6 * u, &cr, &cg, &cb);
+        cv_soft(c, sx + sw2 * u, sy, h * 0.02, cr, cg, cb, 40);
+        cv_soft(c, sx + sw2 * u, sy + sh2, h * 0.02, cr, cg, cb, 40);
+        cv_soft(c, sx, sy + sh2 * u, h * 0.02, cr, cg, cb, 34);
+        cv_soft(c, sx + sw2, sy + sh2 * u, h * 0.02, cr, cg, cb, 34);
     }
 
-    cv_soft(c, cx, cy, ring * 1.1, 90, 190, 255, 90);
-    cv_ball(c, cx, cy, 7.0 + (double)m->vis_level * small_ * 0.05,
-            200, 240, 255, 255, 255, 255);
+    /* wet pavement, and the puddle */
+    cv_rect(c, 0, (int)ground, c->w, c->h - (int)ground, 6, 6, 11, 255);
+    cv_vgrad(c, 0, (int)ground, c->w, c->h - (int)ground, 12, 10, 18, 2, 2, 5);
+    fx_reflect(c, ground, 0.66, 1.5);
+    cv_ell_soft(c, w * 0.46, h * 0.92, w * 0.30, h * 0.05, 40, 50, 70, 40);
 
-    /* the sign in a wet street: three flattened smears of it below the ring,
-     * each one wider, fainter and further down */
-    for (k = 0; k < 3; k++) {
-        double d = 0.10 + 0.09 * (double)k;
-
-        cv_ell_soft(c, cx, cy + ring + small_ * d,
-                    ring * (0.72 + 0.10 * (double)k), small_ * 0.016,
-                    70, 175, 255, 56 - 14 * k);
+    /* rain, and the rings where it lands */
+    for (i = 0; i < 90; i++) {
+        double x = fmod((double)i * 173.3, w);
+        double y = fmod(t * 900.0 + (double)i * 53.0, ground);
+        cv_line(c, x, y, x - 3.0, y + h * 0.030, 1.0, 170, 200, 230,
+                (int)(30 + 20 * lv));
     }
-    /* and a low fog drifting past, which is what neon needs to glow into */
-    cv_ell_soft(c, cx + small_ * 0.10, cy + ring * 0.55,
-                small_ * 0.42, small_ * 0.05, 90, 165, 220, 26);
+    for (i = 0; i < 6; i++) {
+        double ph = fmod(t * 0.9 + (double)i * 0.31, 1.0);
+        cv_ring(c, w * (0.18 + 0.13 * (double)i), h * (0.84 + 0.03 * (double)(i % 3)),
+                h * 0.02 + ph * h * 0.06, 1.0, 170, 200, 230,
+                (int)(60 * (1.0 - ph)));
+    }
+
+    /* steam off a vent */
+    for (k = 0; k < 4; k++)
+        cv_soft(c, w * (0.80 + 0.03 * (double)k), h * (0.66 - 0.06 * (double)k),
+                h * 0.09, 120, 120, 130, 34);
 }
+
 
 
 /* ------------------------------------------------------------- tesseract -- */
@@ -8529,9 +9265,9 @@ static void tess_tick(const UiModel *m, double w, double h)
     if (!s_tess.init) {
         s_tess.seed = 0x2545f491u;
         s_tess.tx = 0.50;
-        s_tess.ty = 0.52;
-        s_tess.tvx = 0.26;
-        s_tess.tvy = 0.18;
+        s_tess.ty = 0.50;
+        s_tess.tvx = 0.10;
+        s_tess.tvy = 0.07;
         s_tess.yaw = 0.40;
         s_tess.pitch = -0.10;
         s_tess.roll = 0.0;
@@ -8578,10 +9314,12 @@ static void tess_tick(const UiModel *m, double w, double h)
     s_tess.tvy *= 0.996;
     s_tess.tvx += 0.05 * sin(m->elapsed_sec * 0.70);
     s_tess.tvy += 0.04 * cos(m->elapsed_sec * 0.53);
-    if (s_tess.tx < 0.28) { s_tess.tx = 0.28; s_tess.tvx = fabs(s_tess.tvx) * 0.95 + 0.05; }
-    if (s_tess.tx > 0.72) { s_tess.tx = 0.72; s_tess.tvx = -fabs(s_tess.tvx) * 0.95 - 0.05; }
-    if (s_tess.ty < 0.28) { s_tess.ty = 0.28; s_tess.tvy = fabs(s_tess.tvy) * 0.95 + 0.05; }
-    if (s_tess.ty > 0.70) { s_tess.ty = 0.70; s_tess.tvy = -fabs(s_tess.tvy) * 0.95 - 0.05; }
+    /* the cage belongs in the middle of its own room: a wide drift put it in
+     * one corner with half the frame empty, which is what the review saw */
+    if (s_tess.tx < 0.41) { s_tess.tx = 0.41; s_tess.tvx = fabs(s_tess.tvx) * 0.95 + 0.02; }
+    if (s_tess.tx > 0.59) { s_tess.tx = 0.59; s_tess.tvx = -fabs(s_tess.tvx) * 0.95 - 0.02; }
+    if (s_tess.ty < 0.40) { s_tess.ty = 0.40; s_tess.tvy = fabs(s_tess.tvy) * 0.95 + 0.02; }
+    if (s_tess.ty > 0.58) { s_tess.ty = 0.58; s_tess.tvy = -fabs(s_tess.tvy) * 0.95 - 0.02; }
 
     /* the badge turns where it hangs, a touch faster when the music moves */
     s_tess.yaw += dt * (0.52 + 0.85 * lv);
@@ -9076,6 +9814,23 @@ static void art_tesseract(Cv *c, const UiModel *m)
     cy = s_tess.ty * h;
     sc = small_ * 0.215;
 
+    /* six shards riding the cage's orbit, mirrored across its centre: the
+     * satellites alone left one whole side of the frame empty, which read as a
+     * mistake rather than a composition */
+    for (i = 0; i < 6; i++) {
+        double a = t * 0.42 + 6.2831853 * (double)i / 6.0;
+        double rad = sc * (1.55 + 0.30 * fsind(t * 0.7 + (double)i));
+        double sxp = cx + cos(a) * rad * 1.45;
+        double syp = cy + sin(a) * rad * 0.72;
+        double ssc = sc * (0.20 + 0.10 * fsind(t * 1.1 + (double)i * 2.0));
+        int    k2;
+
+        tess_cage(px_, py_, pz_, sxp, syp, ssc, t, a * 1.7, 0.0, NULL);
+        for (k2 = 0; k2 < 2; k2++)
+            tess_cell(c, px_, py_, pz_, 0, lv * 0.5);
+        cv_soft(c, sxp, syp, ssc * 1.6, 90, 180, 255, 24);
+    }
+
     /* the bloom: rays thrown out along this beat's random direction */
     if (bloom > 0.03) {
         double base = atan2(s_tess.dir[1], s_tess.dir[0]);
@@ -9095,15 +9850,29 @@ static void art_tesseract(Cv *c, const UiModel *m)
         cv_ring(c, cx, cy, sc * (0.80 + 1.30 * bloom), 2.2, 120, 215, 255,
                 clampi((int)(90 * bloom), 0, 120));
     }
-    cv_soft(c, cx, cy, sc * (1.30 + 0.35 * lv), 70, 150, 255,
-            clampi((int)(22 + 30 * lv), 0, 60));
+    cv_soft(c, cx, cy, sc * (1.60 + 0.45 * lv), 70, 150, 255,
+            clampi((int)(34 + 46 * lv), 0, 92));
+    cv_soft(c, cx, cy, sc * (0.95 + 0.30 * lv), 130, 205, 255,
+            clampi((int)(30 + 40 * lv), 0, 80));
 
     tess_cage(px_, py_, pz_, cx, cy, sc, t, 0.0, bloom, s_tess.dir);
 
     /* the small cages behind the big one, so the scene has depth */
-    for (i = 0; i < TESS_SATS; i++)
-        if (s_tess.sat[i].y <= s_tess.ty)
-            tess_sat_draw(c, &s_tess.sat[i], t, sc, m);
+    for (i = 0; i < TESS_SATS; i++) {
+        TessSat tmp;
+
+        if (s_tess.sat[i].y > s_tess.ty)
+            continue;
+        tess_sat_draw(c, &s_tess.sat[i], t, sc, m);
+        /* each cage has a twin across the centre of the room. The free-flying
+         * ones bunched on one side and left the other empty, which is what
+         * made the composition look broken rather than sparse. */
+        tmp = s_tess.sat[i];
+        tmp.x  = 1.0 - tmp.x;
+        tmp.vx = -tmp.vx;
+        if (tmp.x > 0.02 && tmp.x < 0.98)
+            tess_sat_draw(c, &tmp, t, sc, m);
+    }
 
     /* depth order does the work: the far cell and the links are drawn, then
      * the emblem, then the near cell on top of it, so the logo really is shut
@@ -9218,25 +9987,122 @@ static int    s_force_read;
  * through vis_art_frame_ms() and the ladder uses that number instead. */
 static int    s_drew;            /* a look was drawn since the last report */
 static double s_frame_ms;
-static int    s_frame_ready;
-
-void vis_art_frame_ms(double frame_ms)
-{
-    if (!s_drew)
-        return;
-    s_drew = 0;
-    s_a3_frames++;
-    if ((s_a3_frames % 60ULL) == 0ULL)
-        a3_emit();
-    if (frame_ms > 0.0) {
-        s_frame_ms    = frame_ms;
-        s_frame_ready = 1;
-    }
-}
+static int    s_q_draw_w, s_q_draw_h;   /* the canvas the last look was drawn at */
 
 static double art_now_ms(void)
 {
     return (double)SDL_GetTicks();
+}
+
+/* ---- the ladder, run on every timed frame -------------------------------
+ * It used to run inside the look's own draw call, so a frame that drew no look
+ * was never judged - and the home screen draws no look. On the console that
+ * left the menu pinned at step 1: 1920x1080, a 133 ms upload per frame, 150 ms
+ * to answer the pad, and a home screen that looked frozen. The main loop times
+ * every frame, flush and present included, and hands that number here.
+ *
+ * `dt` is the whole frame in milliseconds, not the drawing alone.
+ */
+static void art_ladder_tick(double dt)
+{
+    double      now   = art_now_ms();
+    int         style = s_q_last_style;
+    int         sid   = style >= 0 ? style : 0;
+    const char *sname = style >= 0 ? vis_style_name(style) : "no look on screen";
+    /* Before the first look is drawn there is nothing to ask for a size, and the
+     * canvas is the full 1920x1080 the screen is (main.c owns those constants). */
+    int         w     = s_q_draw_w > 0 ? s_q_draw_w : 1920;
+    int         h     = s_q_draw_h > 0 ? s_q_draw_h : 1080;
+
+    s_q_avg = s_q_n ? s_q_avg * 0.85 + dt * 0.15 : dt;
+    if (s_q_step >= 1 && s_q_step <= 3)
+        s_q_cost[s_q_step] = s_q_cost[s_q_step] > 0.0
+                           ? s_q_cost[s_q_step] * 0.85 + dt * 0.15 : dt;
+    if (s_q_n < 100)
+        s_q_n++;
+    if (s_q_n >= 8) {
+        /* Full resolution is the default and the point: the picture stays
+         * sharp until a frame is genuinely over budget, not merely slower
+         * than a desktop refresh. Only a look that cannot hold ~17 fps steps
+         * down.
+         *
+         * Going back up is decided on the *remembered* cost of the better
+         * step, not on how fast the current one is: at step 2 a heavy look
+         * runs at 21 ms, which says nothing about whether step 1 fits, and
+         * judging by it is what made the ladder flap. And once quality has
+         * been dropped it stays dropped for a few seconds, because every
+         * change is a visible pop and a look on the threshold would
+         * otherwise hunt. */
+        double budget = s_q_step == 1 ? cfg.quality.budget_step1_ms
+                                      : cfg.quality.budget_ms;
+
+        if (s_q_avg > budget && s_q_step < cfg.quality.max_step) {
+            log_msg(LOG_INFO, "vis",
+                    "quality step %d -> %d (reason: over budget, %.1f ms > %.0f ms at %dx%d, style %d %s)",
+                    s_q_step, s_q_step + 1, s_q_avg, budget,
+                    w / s_q_step, h / s_q_step, sid,
+                    sname);
+            s_q_step++;
+            s_q_t_down = now;
+            s_q_avg = 0.0;
+            s_q_n = 0;
+        } else if (s_q_step > 1) {
+            int    better = s_q_step - 1;
+            double need   = better == 1 ? cfg.quality.budget_step1_ms
+                                        : cfg.quality.budget_ms;
+            double settle = cfg.quality.settle_seconds * 1000.0;
+            double was    = s_q_cost[better];
+            double hold   = now - s_q_t_down;
+
+            /* A step that was never measured here cannot be judged - and
+             * until it is, a look that started low can never climb, which
+             * is what made every session end pinned at step 3. So a step
+             * with no cost on record is probed once, after the settle: it
+             * runs, it is measured, and the normal rules decide whether it
+             * stays. That is also the whole hardware detection: the machine
+             * says what it can do by doing it, on any PS4 model. */
+            if (was <= 0.0 && hold > settle) {
+                log_msg(LOG_INFO, "vis",
+                        "quality step %d -> %d (reason: step %d has no measurement on this console yet; probing it, at %dx%d, style %d %s)",
+                        s_q_step, better, better, w / s_q_step, h / s_q_step,
+                        sid, sname);
+                s_q_step = better;
+                s_q_avg = 0.0;
+                s_q_n = 0;
+            } else if (was > 0.0 && was < need * SQ_MARGIN
+                && hold > settle) {
+                log_msg(LOG_INFO, "vis",
+                        "quality step %d -> %d (reason: step %d measured %.1f ms, under %.0f ms budget; %.1f s since last drop, at %dx%d, style %d %s)",
+                              s_q_step, better, better, was, need,
+                              hold / 1000.0, w / s_q_step, h / s_q_step,
+                              sid, sname);
+                s_q_step = better;
+                s_q_avg = 0.0;
+                s_q_n = 0;
+            } else if (was > 0.0 && hold <= settle
+                       && was < need * SQ_MARGIN
+                       && now - s_q_t_last > 2000.0) {
+                /* said once every few seconds, so the log shows why a look
+                 * that could climb is not climbing */
+                s_q_t_last = now;
+                log_msg(LOG_DEBUG, "vis",
+                        "holding step %d (reason: step %d measured %.1f ms would fit, but only %.1f s of the %.0f s settle)",
+                        s_q_step, better, was, hold / 1000.0,
+                        cfg.quality.settle_seconds);
+            }
+        }
+    }
+}
+
+void vis_art_frame_ms(double frame_ms)
+{
+    if (frame_ms <= 0.0)
+        return;
+    s_drew     = 0;
+    s_frame_ms = frame_ms;
+    if (s_force_step)
+        return;
+    art_ladder_tick(frame_ms);
 }
 
 int vis_art_step(void)
@@ -9261,6 +10127,24 @@ static void force_step_read(void)
 int vis_art_draw(SDL_Renderer *r, const UiModel *m, int style,
                  int x, int y, int w, int h)
 {
+    /* GPU path. Until 2026-11-25 this block drew a GPU frame and then let the
+     * canvas draw the same scene over it and blit that instead - so when Piglet
+     * did initialise, the picture was the canvas all along and the GPU work was
+     * thrown away. It is now a takeover that returns, and it is opt-in at
+     * compile time (`VIS_GPU_TAKEOVER`) because no Piglet surface has ever been
+     * confirmed on this console. Without the flag the GPU path is not touched at
+     * all and the canvas is the only renderer, which is the state that shipped. */
+#ifdef VIS_GPU_TAKEOVER
+    {
+        static int gv_ready = -1;
+        if (gv_ready < 0) { gv_ready = gpu_vis_init(1920, 1080); gpu_vis_select(style); }
+        if (gv_ready) {
+            gpu_vis_frame(0.016f, (float)m->vis_level / 100.0f);
+            return 1;                      /* the look is drawn; do not paint it twice */
+        }
+    }
+#endif
+
     Cv  c;
     int step, ok;
     double big, t0;
@@ -9289,15 +10173,17 @@ int vis_art_draw(SDL_Renderer *r, const UiModel *m, int style,
     if (step < 1)
         step = 1;
     s_paint_step = step;
-    if (s_a3_frames && (style != s_a3_style || step != s_a3_step))
-        a3_emit();
-    s_a3_style = style;
-    s_a3_step = step;
-    s_bloom_boost = (style == VIS_STYLE_RAVE) ? RV_BLOOM_GAIN : 1.0;
+    s_bloom_boost = (style == VIS_STYLE_RAVE) ? RV_BLOOM_GAIN
+                  : (style == VIS_STYLE_TESSERACT) ? 1.45 : 1.0;
     c.w = w / step;
     c.h = h / step;
     if (c.w < 32)
         c.w = w;
+    /* Row alignment matters more than three pixels of width: a canvas row must
+     * be a whole number of 16-byte units or the texture upload takes a slow
+     * path. 546 px at step 3 is 2184 bytes a row, not a multiple of 16; rounded
+     * up to 548 it is 2192, and the extra columns are cropped on present. */
+    c.w = (c.w + 3) & ~3;
     if (c.h < 24)
         c.h = h;
     c.p = cv_get(c.w, c.h);
@@ -9324,15 +10210,15 @@ int vis_art_draw(SDL_Renderer *r, const UiModel *m, int style,
     case VIS_STYLE_WORM:     art_worm(&c, m);     break;
     case VIS_STYLE_WINDMILL: art_windmill(&c, m); break;
     case VIS_STYLE_DANCE:
-        dance_stage(&c, m, 1);
+        dance_stage(&c, m, VIS_STYLE_DANCE);
         dance_pose(&c, m, VIS_STYLE_DANCE);
         break;
     case VIS_STYLE_DANCE2:
-        dance_stage(&c, m, 0);
+        dance_stage(&c, m, VIS_STYLE_DANCE2);
         dance_pose(&c, m, VIS_STYLE_DANCE2);
         break;
     case VIS_STYLE_DANCE3:
-        dance_stage(&c, m, 0);
+        dance_stage(&c, m, VIS_STYLE_DANCE3);
         dance_pose(&c, m, VIS_STYLE_DANCE3);
         break;
     case VIS_STYLE_TESSERACT:
@@ -9404,90 +10290,25 @@ int vis_art_draw(SDL_Renderer *r, const UiModel *m, int style,
     ok = art_present(r, &c, x, y, w, h);
 
     /* this frame drew a look, so main will hand back what the whole frame cost */
+    (void)t0;   /* the frame is timed by main(); the ladder reads that */
     s_drew = 1;
 
-    if (t0 > 0.0 && !s_force_step) {
-        double now = art_now_ms();
-        double dt  = s_frame_ready ? s_frame_ms : (now - t0);
-
-        s_frame_ready = 0;
-
-        /* A different style is a different workload, so what the last one cost
-         * at each step says nothing about this one. Forget it, and let this one
-         * be measured from scratch instead of being judged on another look's
-         * numbers. */
-        if (style != s_q_last_style) {
-            s_q_last_style = style;
-            s_q_cost[1] = s_q_cost[2] = s_q_cost[3] = 0.0;
-            s_q_avg = 0.0;
-            s_q_n   = 0;
-            /* a new style may also bring a new ceiling from config.ini */
-            if (s_q_step > cfg.quality.max_step)
-                s_q_step = cfg.quality.max_step;
-        }
-        s_q_avg = s_q_n ? s_q_avg * 0.85 + dt * 0.15 : dt;
-        if (s_q_step >= 1 && s_q_step <= 3)
-            s_q_cost[s_q_step] = s_q_cost[s_q_step] > 0.0
-                               ? s_q_cost[s_q_step] * 0.85 + dt * 0.15 : dt;
-        if (s_q_n < 100)
-            s_q_n++;
-        if (s_q_n >= 8) {
-            /* Full resolution is the default and the point: the picture stays
-             * sharp until a frame is genuinely over budget, not merely slower
-             * than a desktop refresh. Only a look that cannot hold ~17 fps steps
-             * down.
-             *
-             * Going back up is decided on the *remembered* cost of the better
-             * step, not on how fast the current one is: at step 2 a heavy look
-             * runs at 21 ms, which says nothing about whether step 1 fits, and
-             * judging by it is what made the ladder flap. And once quality has
-             * been dropped it stays dropped for a few seconds, because every
-             * change is a visible pop and a look on the threshold would
-             * otherwise hunt. */
-            double budget = s_q_step == 1 ? cfg.quality.budget_step1_ms
-                                          : cfg.quality.budget_ms;
-
-            if (s_q_avg > budget && s_q_step < cfg.quality.max_step) {
-                log_msg(LOG_INFO, "vis",
-                        "quality step %d -> %d (reason: over budget, %.1f ms > %.0f ms at %dx%d, style %d %s)",
-                        s_q_step, s_q_step + 1, s_q_avg, budget,
-                        w / s_q_step, h / s_q_step, style,
-                        vis_style_name(style));
-                s_q_step++;
-                s_q_t_down = now;
-                s_q_avg = 0.0;
-                s_q_n = 0;
-            } else if (s_q_step > 1) {
-                int    better = s_q_step - 1;
-                double need   = better == 1 ? cfg.quality.budget_step1_ms
-                                            : cfg.quality.budget_ms;
-                double settle = cfg.quality.settle_seconds * 1000.0;
-                double was    = s_q_cost[better];
-                double hold   = now - s_q_t_down;
-
-                if (was > 0.0 && was < need * SQ_MARGIN
-                    && hold > settle) {
-                    log_msg(LOG_INFO, "vis",
-                            "quality step %d -> %d (reason: step %d measured %.1f ms, under %.0f ms budget; %.1f s since last drop, at %dx%d, style %d %s)",
-                                  s_q_step, better, better, was, need,
-                                  hold / 1000.0, w / s_q_step, h / s_q_step,
-                                  style, vis_style_name(style));
-                    s_q_step = better;
-                    s_q_avg = 0.0;
-                    s_q_n = 0;
-                } else if (was > 0.0 && hold <= settle
-                           && was < need * SQ_MARGIN
-                           && now - s_q_t_last > 2000.0) {
-                    /* said once every few seconds, so the log shows why a look
-                     * that could climb is not climbing */
-                    s_q_t_last = now;
-                    log_msg(LOG_DEBUG, "vis",
-                            "holding step %d (reason: step %d measured %.1f ms would fit, but only %.1f s of the %.0f s settle)",
-                            s_q_step, better, was, hold / 1000.0,
-                            cfg.quality.settle_seconds);
-                }
-            }
-        }
+    /* The ladder itself is art_ladder_tick() now: it runs on every frame the
+     * main loop times, including the home screen's, which draws no look. */
+    s_q_draw_w = w;
+    s_q_draw_h = h;
+    /* A different style is a different workload, so what the last one cost
+     * at each step says nothing about this one. Forget it, and let this one
+     * be measured from scratch instead of being judged on another look's
+     * numbers. */
+    if (style != s_q_last_style) {
+        s_q_last_style = style;
+        s_q_cost[1] = s_q_cost[2] = s_q_cost[3] = 0.0;
+        s_q_avg = 0.0;
+        s_q_n   = 0;
+        /* a new style may also bring a new ceiling from config.ini */
+        if (s_q_step > cfg.quality.max_step)
+            s_q_step = cfg.quality.max_step;
     }
     return ok;
 }

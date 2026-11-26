@@ -61,6 +61,7 @@ typedef struct {
 
 typedef struct {
     int    max_step;          /* 1..3 */
+    int    tier;              /* 0 auto, 1 base, 2 pro - see cfg_apply_tier() */
     double budget_step1_ms;   /* a frame over this drops to step 2 */
     double budget_ms;         /* ... and this drops to step 3 */
     double settle_seconds;    /* stay at a dropped step this long */
@@ -118,6 +119,11 @@ void cfg_ready(void);
  * broken value falls back to its default with a warning in the log. Returns 0
  * when the file was read, 1 when it was created. */
 int cfg_load(void);
+
+/* Applies the stated hardware tier to the quality budgets. tier 0 leaves the
+ * ladder free to measure this console itself; 1 states base PS4; 2 states PS4
+ * Pro and tightens the budgets so the extra headroom is spent on the picture. */
+void cfg_apply_tier(void);
 
 /* Writes the whole file back with the current values. Returns 0 on success. */
 int cfg_save(void);

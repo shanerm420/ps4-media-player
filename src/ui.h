@@ -41,6 +41,7 @@ typedef struct {
 #define UI_SCREEN_VIDEOS   2
 #define UI_SCREEN_PICTURES 3
 #define UI_SCREEN_BROWSER  4
+#define UI_SCREEN_SETTINGS 5
 #define UI_SCREEN_LIBRARY  UI_SCREEN_MUSIC   /* old name, same screen */
 
 typedef struct {
@@ -142,6 +143,19 @@ typedef struct {
 
     /* theme / skin, and the file manager's state */
     const char    *theme_name;
+    const char    *theme_note;      /* what this skin's room is made of */
+
+    /* search: the on-screen keyboard and the query it spells */
+    const char    *search_query;
+    int            search_active;
+    int            search_pos;      /* key under the cursor, 0..39 */
+
+    /* settings screen: the rows are built by the caller, so this file draws
+     * whatever list it is handed and owns no preference of its own */
+    int            set_row;
+    int            set_count;
+    const char    *set_label[10];
+    const char    *set_value[10];
     int            usb_present;     /* a storage device is in a USB slot */
     int            usb_count;
     int            confirm_delete;  /* the delete prompt is on screen */

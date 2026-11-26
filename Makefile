@@ -7,12 +7,14 @@
 #   make            -> build/eboot.bin and <CONTENT_ID>.pkg
 
 TITLE       := Ultimate PS4 Media Player
-VERSION     := 1.00
+VERSION     := 1.44
+# the file handed over is named for the player, not for the content id
+PKGVER      := 144
 # The PS4 enforces the Content ID length: 6 + 1 + 12 + 1 + 16 = 36 characters,
 # where the middle 12 are the 9-character TITLE_ID plus "_00". PkgTool aborts
 # with "Content ID must be 36 characters long" otherwise.
 TITLE_ID    := BREM00001
-CONTENT_ID  := ED1234-BREM00001_00-0000000000000000
+CONTENT_ID  := IV0000-BREM00001_00-ULTIMATEMEDIA000
 
 # -lSceAudioOut for playback, -lSceUserService for the initial user,
 # -lSDL2 for window/renderer/controller. -lm only if your toolchain ships
@@ -21,6 +23,7 @@ CONTENT_ID  := ED1234-BREM00001_00-0000000000000000
 # after -lSDL2 (lld resolves archives left to right) or the link fails on
 # undefined sceVideoOutGetResolutionStatus and friends.
 LIBS        := -lc -lkernel -lc++ \
+               -lScePigletv2VSH -lScePrecompiledShaders \
                -lSDL2 -lSceVideoOut -lSceCommonDialog \
                -lSceUserService -lSceAudioOut -lScePad -lSceSysmodule \
                -lSceSystemService -lSceGnmDriver -lSceAvPlayer \
@@ -54,13 +57,30 @@ DEPS        := $(OBJS:.o=.d)
 # clone builds immediately with the pixel font and switches to Inter as soon
 # as the header exists.
 FONTFLAG    := $(if $(wildcard src/font_inter.h),-DUI_FONT_ATLAS)
-# Fixed build stamp, so identical source gives an identical package (tools/buildstamp.py).
-BUILDSTAMP  := $(shell python3 tools/buildstamp.py)
-CFLAGS      := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -O2 \
+# Plate effects (Stage 3): off unless asked for. make VIS_PLATE_FX=1 builds a
+# package that carries them, and a plain make is exactly the build that shipped.
+# `$(if $(VIS_PLATE_FX),...)` treated the value 0 as "on" - only an empty
+# variable is false in make - so `make VIS_PLATE_FX=0` built WITH the effects and
+# said nothing (found 2026-11-25 in the toolchain sweep). Only 1 turns it on now.
+FXFLAG      := $(if $(filter 1,$(VIS_PLATE_FX)),-DVIS_PLATE_FX)
+# Fixed clock, so a rebuild of unchanged source is a fair comparison, and a hash
+# of the source compiled in as the build's identity (tools/buildstamp.py).
+# NOTE: the package is NOT byte-reproducible - create-gp4 stamps volume_ts and
+# PkgTool stamps PUBTOOLINFO c_date from the clock, measured 2026-11-25 - so an
+# MD5 names a build, never a source state. BUILD_SRC is what proves the source,
+# and tools/check-pkg.py reads it back out of the shipped eboot.bin.
+BUILDSTAMP  := $(shell python3 tools/buildstamp.py $(VERSION))
+CFLAGS      := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -O2 $(FXFLAG) \
                -Wall -Wextra -c -Isrc -Ithird_party $(FONTFLAG) $(BUILDSTAMP) \
                -isysroot $(TOOLCHAIN) -isystem $(TOOLCHAIN)/include
 LDFLAGS     := -m elf_x86_64 -pie --script $(TOOLCHAIN)/link.x --eh-frame-hdr \
                -L$(TOOLCHAIN)/lib $(LIBS) $(TOOLCHAIN)/lib/crt1.o
+
+# Compiler flags are not prerequisites in make, so switching VIS_PLATE_FX on a
+# tree that was built without it recompiled nothing and shipped a package with
+# no effects (the plain build). This stamp is rewritten only when the flags that
+# change behaviour change, and every object depends on it.
+FLAGSIG     := $(INTDIR)/.flags
 
 UNAME_S     := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
@@ -74,8 +94,11 @@ ifeq ($(UNAME_S),Darwin)
   CDIR := macos
 endif
 
-.PHONY: all clean check deps status
-all: $(CONTENT_ID).pkg
+.PHONY: all clean check deps status bench-vis
+# R23, enforced rather than described: a package cannot be produced unless the
+# checks pass. This is the rule that failed once (BREW00102, CE-33481-9) because
+# the Makefile said nothing about it and a human had to remember.
+all: check $(CONTENT_ID).pkg
 
 # Fetches third_party/minimp3.h and generates src/font_inter.h (pinned).
 deps:
@@ -83,6 +106,7 @@ deps:
 
 $(CONTENT_ID).pkg: pkg.gp4
 	$(PKG) pkg_build $< .
+	python3 tools/check-pkg.py .
 
 # icon0.png is the XMB tile; it has to be listed here or the package builds fine
 # and the console shows a blank tile. right.sprx is optional but harmless.
@@ -91,47 +115,95 @@ PKGFILES    := $(wildcard sce_sys/icon0.png) $(wildcard sce_sys/about/right.sprx
 pkg.gp4: eboot.bin sce_sys/param.sfo $(LIBMODULES) $(ASSETS) $(PKGFILES)
 	$(TOOLCHAIN)/bin/$(CDIR)/create-gp4 -out $@ --content-id=$(CONTENT_ID) --files "$^"
 
-sce_sys/param.sfo:
+# Depends on the Makefile because TITLE, VERSION and CONTENT_ID live there: a
+# version bump that did not rebuild this produced a package whose APP_VER still
+# said the old number (found 2026-11-25). Written to a temporary and renamed so
+# an interrupted build can never leave a half-written SFO that `make` then keeps
+# - that is the BREW00102 "Corrupted Data" bug, and R23 exists because of it.
+sce_sys/param.sfo: Makefile
 	mkdir -p sce_sys/about
-	$(PKG) sfo_new $@
-	$(PKG) sfo_setentry $@ APP_TYPE --type Integer --maxsize 4 --value 1
-	$(PKG) sfo_setentry $@ APP_VER --type Utf8 --maxsize 8 --value '$(VERSION)'
-	$(PKG) sfo_setentry $@ ATTRIBUTE --type Integer --maxsize 4 --value 2
-	$(PKG) sfo_setentry $@ ATTRIBUTE2 --type Integer --maxsize 4 --value 0
-	$(PKG) sfo_setentry $@ DEV_FLAG --type Integer --maxsize 4 --value 0
-	$(PKG) sfo_setentry $@ PARENTAL_LEVEL --type Integer --maxsize 4 --value 1
-	$(PKG) sfo_setentry $@ CATEGORY --type Utf8 --maxsize 4 --value 'gd'
-	$(PKG) sfo_setentry $@ CONTENT_ID --type Utf8 --maxsize 48 --value '$(CONTENT_ID)'
-	$(PKG) sfo_setentry $@ DOWNLOAD_DATA_SIZE --type Integer --maxsize 4 --value 0
-	$(PKG) sfo_setentry $@ SYSTEM_VER --type Integer --maxsize 4 --value 0
-	$(PKG) sfo_setentry $@ TITLE --type Utf8 --maxsize 128 --value '$(TITLE)'
-	$(PKG) sfo_setentry $@ TITLE_ID --type Utf8 --maxsize 12 --value '$(TITLE_ID)'
-	$(PKG) sfo_setentry $@ VERSION --type Utf8 --maxsize 8 --value '$(VERSION)'
+	$(PKG) sfo_new $@.tmp
+	$(PKG) sfo_setentry $@.tmp APP_TYPE --type Integer --maxsize 4 --value 1
+	$(PKG) sfo_setentry $@.tmp APP_VER --type Utf8 --maxsize 8 --value '$(VERSION)'
+	$(PKG) sfo_setentry $@.tmp ATTRIBUTE --type Integer --maxsize 4 --value 2
+	$(PKG) sfo_setentry $@.tmp ATTRIBUTE2 --type Integer --maxsize 4 --value 0
+	$(PKG) sfo_setentry $@.tmp DEV_FLAG --type Integer --maxsize 4 --value 0
+	$(PKG) sfo_setentry $@.tmp PARENTAL_LEVEL --type Integer --maxsize 4 --value 1
+	$(PKG) sfo_setentry $@.tmp CATEGORY --type Utf8 --maxsize 4 --value 'gd'
+	$(PKG) sfo_setentry $@.tmp CONTENT_ID --type Utf8 --maxsize 48 --value '$(CONTENT_ID)'
+	$(PKG) sfo_setentry $@.tmp DOWNLOAD_DATA_SIZE --type Integer --maxsize 4 --value 0
+	$(PKG) sfo_setentry $@.tmp SYSTEM_VER --type Integer --maxsize 4 --value 0
+	$(PKG) sfo_setentry $@.tmp TITLE --type Utf8 --maxsize 128 --value '$(TITLE)'
+	$(PKG) sfo_setentry $@.tmp TITLE_ID --type Utf8 --maxsize 12 --value '$(TITLE_ID)'
+	$(PKG) sfo_setentry $@.tmp VERSION --type Utf8 --maxsize 8 --value '$(VERSION)'
+	mv -f $@.tmp $@
 
 eboot.bin: $(OBJS)
 	$(LD) $(OBJS) -o $(INTDIR)/$(APPNAME).elf $(LDFLAGS)
 	$(TOOLCHAIN)/bin/$(CDIR)/create-fself -in=$(INTDIR)/$(APPNAME).elf \
 	    -out=$(INTDIR)/$(APPNAME).oelf --eboot "eboot.bin" --paid 0x3800000000000011
 
-$(INTDIR)/%.o: %.c
+$(INTDIR)/%.o: %.c $(FLAGSIG)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP $< -o $@
+
+# main.c is the only file that compiles the source hash in, so it is the only
+# one that has to be rebuilt when the hash moves. Without this a Makefile-only
+# change (a new check, say) left the old hash in the binary and `check-pkg`
+# refused the package - correctly, but for a reason the build could prevent.
+SRCID      := $(INTDIR)/.srcid
+$(INTDIR)/src/main.o: $(SRCID)
+$(SRCID): FORCE
+	@mkdir -p $(INTDIR)
+	@printf '%s\n' '$(BUILDSTAMP)' > $@.tmp
+	@cmp -s $@.tmp $@ && rm -f $@.tmp || mv $@.tmp $@
+
+# Always runs, writes only on a real change, so it does not force a rebuild.
+.PHONY: FORCE
+FORCE:
+$(FLAGSIG): FORCE
+	@mkdir -p $(INTDIR)
+	@printf '%s|%s|%s\n' '$(VIS_PLATE_FX)' '$(FXFLAG)' '$(FONTFLAG)' > $@.tmp
+	@cmp -s $@.tmp $@ && rm -f $@.tmp || mv $@.tmp $@
 
 # Host-side test of the platform-independent audio path. No PS4 needed.
 # Also lints the two rules files: section order, rule ids, cross references,
 # superseded tags without an amendment, unknown MD5s, the AGENTS.md ceiling.
 check:
+	sh test/stamp_test.sh
 	$(MAKE) -C test run
+	python3 tools/check-layout.py
 	python3 tools/check-manifest.py
 	python3 tools/rule-index.py
-	python3 test/mutate.py
+	python3 tools/check-visuals.py
+	python3 tools/check-links.py
 
 # The status board: runs the checks again and rewrites files/STATUS.html.
 # Not part of `check`, because it calls `check` to fill its own rows.
+bench-vis:
+	python3 tools/bench-visuals.py
+
 status:
 	python3 tools/status.py
 
+# Only what the build itself creates. `sce_sys/` is NOT removed: it holds
+# icon0.png and about/right.sprx, which nothing regenerates, and PKGFILES is a
+# wildcard, so deleting the directory produced a package with a blank XMB tile
+# instead of failing. param.sfo is regenerated by its own rule.
 clean:
-	rm -rf $(INTDIR) eboot.bin pkg.gp4 sce_sys *.pkg
+	rm -rf $(INTDIR) eboot.bin pkg.gp4 $(CONTENT_ID).pkg
+	rm -f sce_sys/param.sfo
 
 -include $(DEPS)
+
+# handover - the file the owner installs, named the way the packages always are.
+# pkgcheck is phony so an already-built package is checked again on every
+# handover: check-pkg used to be described as the gate and never called by the
+# build (found 2026-11-25).
+.PHONY: pkgcheck
+pkgcheck: $(CONTENT_ID).pkg
+	python3 tools/check-pkg.py .
+
+handover: check pkgcheck $(CONTENT_ID).pkg
+	cp -f $(CONTENT_ID).pkg Ultimate-Media-Player-v$(PKGVER).pkg
+	@echo "handover: Ultimate-Media-Player-v$(PKGVER).pkg"

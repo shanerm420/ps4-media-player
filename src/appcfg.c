@@ -24,6 +24,7 @@
 #include "applog.h"
 
 #define CFG_DIR   "/data/ultimate-ps4-media-player"
+#define CFG_TMP  CFG_DIR "/config.ini.tmp"
 #define CFG_FILE  CFG_DIR "/config.ini"
 
 /* The three files this replaces. They are read once, when config.ini does not
@@ -120,9 +121,12 @@ static const CfgKey k_keys[] = {
 /* ---- [quality] ----------------------------------------------------------- */
     KI("quality", "max_step", quality.max_step, 3, 1, 3,
        "3 = allow half and third resolution, 1 = always full"),
-    KD("quality", "budget_step1_ms", quality.budget_step1_ms, 56.0, 10.0, 400.0,
+    KD("quality", "budget_step1_ms", quality.budget_step1_ms, 20.0, 10.0, 400.0,
        "a frame at full resolution over this drops one step"),
-    KD("quality", "budget_ms", quality.budget_ms, 88.0, 10.0, 400.0,
+    KI("quality", "tier", quality.tier, 0, 0, 2,
+       "hardware tier: 0 auto (the ladder probes and finds the machine), "
+       "1 base PS4, 2 PS4 Pro"),
+    KD("quality", "budget_ms", quality.budget_ms, 33.4, 10.0, 400.0,
        "a frame at step 2 over this drops to step 3"),
     KD("quality", "settle_seconds", quality.settle_seconds, 5.0, 0.0, 60.0,
        "how long a dropped step is held before it may climb back"),
@@ -556,7 +560,12 @@ int cfg_save(void)
     int         i;
 
     mkdir(CFG_DIR, 0777);
-    f = fopen(CFG_FILE, "w");
+    /* Write beside the file, flush it, then put it in place in one step. A
+     * console can be powered off, put in rest mode or have the app closed by the
+     * system at any moment; a half-written config.ini costs the owner every
+     * setting they ever changed, and the old code opened the real file for
+     * writing before the first line was even formatted. */
+    f = fopen(CFG_TMP, "w");
     if (!f)
         return -1;
 
@@ -603,4 +612,32 @@ void cfg_log_diffs(void)
     else
         log_msg(LOG_INFO, "config", "%d value%s away from default: %s%s", n,
                 n == 1 ? "" : "s", list, n > 6 ? " ..." : "");
+}
+
+
+/* ---------------------------------------------------------- hardware tier -- *
+ * The console is detected by the ladder, not by asking it for a model number:
+ * a base PS4, a Slim and a Pro all run the same code, and the ladder measures
+ * what this one actually costs before it decides a step. This function exists
+ * so the owner can *state* the machine instead, or so a later probe can, and so
+ * the two tiers have one place where their numbers live.
+ *
+ *   auto  (0)  the defaults below; the ladder probes upward and settles
+ *   base  (1)  30 fps floor at 20 ms to full resolution
+ *   pro   (2)  60 fps ceiling claimed: 16.6 ms to full resolution
+ */
+void cfg_apply_tier(void)
+{
+    switch (cfg.quality.tier) {
+    case 1:                              /* base PS4, every model */
+        cfg.quality.budget_step1_ms = 20.0;
+        cfg.quality.budget_ms       = 33.4;
+        break;
+    case 2:                              /* PS4 Pro */
+        cfg.quality.budget_step1_ms = 16.6;
+        cfg.quality.budget_ms       = 25.0;
+        break;
+    default:                             /* auto: the ladder decides */
+        break;
+    }
 }
