@@ -1,0 +1,13 @@
+# host bench, 1920x1080, mode 13, 40 frames, this build, VIS_STEP=1 (pinned)
+# host numbers rank approaches; console numbers decide (R6/R24)
+style=0 name=SPECTRUM  ms=41.74 fps=24.0
+style=1 name=WAVEFORM  ms=45.70 fps=21.9
+style=2 name=RADIAL    ms=37.90 fps=26.4
+style=3 name=PULSE     ms=36.09 fps=27.7
+style=4 name=MIRROR    ms=44.44 fps=22.5
+style=5 name=BLOCKS    ms=44.91 fps=22.3
+style=6 name=SCOPE     ms=49.47 fps=20.2
+style=9 name=NEON      ms=35.31 fps=28.3
+style=10 name=FLAG      ms=41.65 fps=24.0
+style=12 name=WORM      ms=44.93 fps=22.3
+style=13 name=WINDMILL  ms=28.79 fps=34.7
