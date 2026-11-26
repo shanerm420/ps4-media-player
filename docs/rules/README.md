@@ -19,7 +19,12 @@ Status vocabulary: **measured** (a console log proves it), **researched only**
 - [G7](G7.md) — A clean-room note per borrowed idea. `procedural`
 - [G8](G8.md) — "Professional" defined so it can be failed, from the v112 and v115 console runs. `measured`
 - [G9](G9.md) — The rules core has a size ceiling. `procedural`
-- [G10](G10.md) — A new project starts its own file, and links back. `measured`
+- [G10](G10.md) — A new project starts its own file, and links back. `procedural`
+- [G11](G11.md) — One acting agent decides; other AIs are instruments. `procedural`
+- [G12](G12.md) — A build unknown is not a "no" until every means has been tried. `procedural`
+- [G13](G13.md) — Every attempt is written down in the same turn. `procedural`
+- [G14](G14.md) — Fact-checking is a parallel batch, not a conversation. `procedural`
+- [G15](G15.md) — Four quadrants and a checklist before any new kind of job. `procedural`
 
 ## Graphics and hardware facts (R)
 
@@ -54,13 +59,9 @@ Status vocabulary: **measured** (a console log proves it), **researched only**
 - [R29](R29.md) — **Do not reproduce a method that already exists - reuse it** — this project has rebuilt things that were already there: a bespoke logger and an on-screen text renderer for every probe while the player already had `applog` and its own text drawing, and a uniform-binding answer the ES2 spec states `procedural`
 - [R30](R30.md) — **Ask the owner only about how it should look; every technical question is answered here and work continues** — the owner's instruction, 2026-11-24: "the only thing that should be asked is aesthetic questions... if it has to do with programming or coding in any way... refer to the Manifest to find the solution instead of asking the user" `procedural`
 - [R31](R31.md) — **Two threads write the playback flags with no lock** - `s_playing`, `s_quit` and `s_track_finished` are declared `volatile int` in `src/main.c:157-159`; the SDL loop sets them, and `audio_thread` also writes them at the end of a track (`s_playing = 0; s_track_finished = 1;`, `src/main.c:1883-1885`), while `src/main.c` holds no `pthread_mutex` anywhere, so `volatile` is being asked to do a synchronization primitive's job `procedural`
-- [R32](R32.md) — **Owner-authorised rounds are the only way source is written** `procedural`
-- [R33](R33.md) — **One namespace: a rule is in the table and in the index, or it does not exist** `measured`
-- [R34](R34.md) — **A rule without a falsifier is a preference** `measured`
-- [R35](R35.md) — **Every pointer resolves, and a skipped check is never a pass** `measured`
-- [R36](R36.md) — **Every measured rule names the machine it was measured on** `assumed`
-- [R37](R37.md) — **Each agent verifies independently, and no agent's report is evidence for the other** `procedural`
-- [R38](R38.md) — **A pointer resolves in one of three declared namespaces** `measured`
+- [R32](R32.md) — **Every build detects the machine by measurement and spends what it finds; base PS4 is the floor and Pro headroom is used automatically** — owner, 2026-11-25: "this should work on all PS4 models with options for PS4 Pro models that seamlessly work as they are intended". Base, Slim and Pro run the same code: the ladder probes a step it has never measured on this console and keeps it only if it fits, so a Pro settles at full resolution and a base PS4 settles at whatever holds its budget. `[quality] tier` (0 auto, 1 base, 2 pro) states the machine instead of measuring it; tier 2 tightens the budgets to 16.6/25.0 ms. No model API is trusted, because none is confirmed here. `measured`
+- [R33](R33.md) — **A slow frame is transport, maths or hardware, in that order of suspicion - and "the console is old" is not an answer** — owner, 2026-11-25: "I can play cyberpunk on this thing". The 62-82 ms frames were blamed on the rasterizer for two rounds while `flush` (the canvas upload) was the largest item at 8.29 MB a frame, upscaled to 1080p regardless of the step. Measure the split (paint / flush / present) and the upload bytes before naming a cause. `measured`
+- [R34](R34.md) — **The process serves the package, and every audit ends in a build** — a design, its steps, a checklist and a shipped package; an audit that ends in more audit is a failure of the method. When a claim and the code disagree, fix the code and record the amendment in the same turn, then rebuild and hand over. `procedural`
 
 ## Amendments
 
