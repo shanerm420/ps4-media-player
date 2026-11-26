@@ -246,7 +246,9 @@ they apply to every job under this project from now on. Each says how it is
 satisfied and what evidence proves it; where a number is needed and none has
 been measured, the rule says so instead of inventing one.
 
-**G1 — Memory budget per subsystem, stated in every plan.** A plan is not
+### G1 — Memory budget per subsystem, stated in every plan
+
+A plan is not
 complete until it names a ceiling for each part that allocates: UI and canvas,
 decoder buffers, effects and intermediate targets, and headroom. The ceilings
 must sum to no more than **60% of the direct pool**, so a job cannot pass its
@@ -258,7 +260,9 @@ pass) rather than failing to open the file. Starting split, **assumed, to be
 corrected by measurement**: UI and canvas 25%, decoder 40%, effects 20%,
 headroom 15%. Nothing may quote those four numbers as measured.
 
-**G2 — Crash and hang runbook.** In order, before any investigation: (1) is the
+### G2 — Crash and hang runbook
+
+In order, before any investigation: (1) is the
 package still the one you meant — check the MD5; (2) pull the log and read the
 **last** ten lines, not the first — a stage marker with no successor names the
 step that stopped; (3) is it a hang or a crash — a hang keeps the last frame and
@@ -269,7 +273,9 @@ console is still healthy, which separates our fault from the console's; (6) only
 then write the cause into §6. Never debug on the console by repeatedly
 reinstalling: one variable per run, and the log decides.
 
-**G3 — A fixed benchmark, compared rather than re-derived.** One benchmark,
+### G3 — A fixed benchmark, compared rather than re-derived
+
+One benchmark,
 unchanged between rounds: the host preview `seq` over the named looks at the
 three quality steps, three runs, plus `one-shot.bmp` MD5s for the pixels. Numbers
 and MD5s go in `files/bench/<version>.txt` and a round states the delta against
@@ -277,33 +283,43 @@ the previous file, not against memory. A round that changes rendering without a
 `files/bench` line is not finished. The console remains the decider; the
 benchmark exists so the console run is the only expensive measurement.
 
-**G4 — Input latency, target two frames, not yet measured here.** Poll-to-photon for one
+### G4 — Input latency, target two frames, not yet measured here
+
+Poll-to-photon for one
 button is part of any round that touches input: press a button that changes
 something visible, capture at high frame rate or read the log's own frame
 indices, and state the delay in frames. Target: **two frames or fewer** at the
 step the console runs. If a change buys frame time by adding a frame of delay,
 that is a loss and it is logged as one.
 
-**G5 — Thermals and sustained clocks.** Any run longer than five minutes states
+### G5 — Thermals and sustained clocks
+
+Any run longer than five minutes states
 whether the last minute was slower than the first. Compare the first and last
 sixty seconds of frame times from one log; a drop over 5% is recorded as a
 sustained-clock question in §10, not smoothed away. Until a console reading settles it,
 long-run numbers are quoted with their position in the run. The 5% threshold is an assumed starting point, not a console
 finding.
 
-**G6 — `config.ini` migration, never a silent reset.** Renaming or removing a key
+### G6 — `config.ini` migration, never a silent reset
+
+Renaming or removing a key
 keeps the old name readable as an alias for one version, logs
 `config key renamed <old> -> <new>`, and leaves the owner's value in place. A key
 that is removed is logged as ignored, not dropped without a word. The startup
 line `config loaded … (N keys, M missing, B bad, U unknown)` is the check: `bad`
 and `unknown` rising is a migration bug in our code, not a user error.
 
-**G7 — A clean-room note per borrowed idea.** Whenever a reference shapes
+### G7 — A clean-room note per borrowed idea
+
+Whenever a reference shapes
 something, one line goes into §8: the technique, the reference, and what was
 written here independently. Original code is not negotiable (§12 legal), and
 this is the record that proves it was.
 
-**G8 — "Professional" defined so it can be failed, from the v112 and v115 console runs.** At 1080p: a visualizer
+### G8 — "Professional" defined so it can be failed, from the v112 and v115 console runs
+
+At 1080p: a visualizer
 holds **≤ 50 ms (3 vsyncs)** at the step the console actually runs, and draws at
 **no less than 1640x560** for the look box before any step-down — the box size
 the console already uses. Any look that cannot hold both states which one it
@@ -312,7 +328,9 @@ measured on the music list. These are ceilings, not goals: a look that meets the
 is finished even if it could be prettier, and a look that misses them is not
 finished even if it looks good.
 
-**G9 — The rules core has a size ceiling.** `AGENTS.md` **must not grow past its
+### G9 — The rules core has a size ceiling
+
+`AGENTS.md` **must not grow past its
 **640 lines** (635 when these rules were added on 2026-11-24, the plan text included, so the five lines of headroom are not an invitation) and this file's rules
 sections (§5, §11's reply rules, §12) must not grow past 900. The target is
 smaller: 400 lines of rules, reached the first time the plan text is touched, by
@@ -322,7 +340,9 @@ the older rule moves to an appendix with a one-line pointer — never deleted,
 never weakened, just out of the way of the rules somebody has to read before
 starting work. A rules file nobody finishes reading protects nothing.
 
-**G10 — A new project starts its own file, and links back.** Anything that is
+### G10 — A new project starts its own file, and links back
+
+Anything that is
 not the media player — a game, a tool, a port — gets its own `AGENTS.md` and
 manifest that inherit the ten rules above and this project's evidence standard,
 and that do **not** inherit Liquid's water bands. The shared core stays here;
