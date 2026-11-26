@@ -104,7 +104,8 @@ points into docs/. tools/check-links.py runs in CI on every push, so a broken
 link or a dangling anchor fails the build." \
     README.md AGENTS.md docs/README.md docs/PLAN.md \
     docs/STATUS.html docs/RULES.index tools .github CHECKSUMS.txt \
-    PIGLET-NOTES.md ROUND-NOTES.md APPENDIX-LOGS.md
+    PIGLET-NOTES.md ROUND-NOTES.md APPENDIX-LOGS.md \
+    docs/APPENDIX-STATE.md docs/PLAN-AND-OPEN-PROBLEMS.md APPENDIX-HISTORY-2026-11-24.md
 
 echo "== what was staged"
 git -C "$WORK" --no-pager log --oneline -4
